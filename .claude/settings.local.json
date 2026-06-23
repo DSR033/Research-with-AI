@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs ls -t)",
+      "Bash(npm --version)",
+      "Bash(npx create-next-app@latest frontend --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --yes)",
+      "Bash(mkdir -p /Users/duggu/Claude/Projects/Survey/backend)",
+      "Bash(python3 -m venv venv)",
+      "Bash(venv/bin/pip install *)",
+      "Bash(mkdir -p /Users/duggu/Claude/Projects/Survey/.claude)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(extract-text \"Survey_Platform_PRD.docx\")",
+      "Bash(pandoc \"Survey_Platform_PRD.docx\" -t markdown)",
+      "Bash(extract-text \"Survey_Platform_MVP_Feature_Spec.docx\")",
+      "Bash(pandoc \"Survey_Platform_MVP_Feature_Spec.docx\" -t markdown)",
+      "Bash(pandoc --version)",
+      "Bash(python3 \"/Users/duggu/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/a83116ca-158d-411e-87df-369e555df7ee/cbeddcdf-ca00-4c9f-bd82-e3de11c890cb/skills/docx/scripts/office/unpack.py\" \"/Users/duggu/Claude/Projects/Survey/Survey_Platform_PRD.docx\" \"/tmp/prd_unpacked/\")",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget",
+      "mcp__Claude_in_Chrome__navigate",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(mkdir -p \"/Users/duggu/Claude/Projects/Survey/frontend/app/surveys/[id]/respond\")",
+      "Bash(curl -s -X POST http://localhost:8000/surveys -H 'Content-Type: application/json' -d '{\"title\":\"Customer Feedback\",\"mode\":\"conversational\",\"status\":\"active\"}')",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c/questions -H 'Content-Type: application/json' -d '{\"type\":\"nps\",\"title\":\"How likely are you to recommend us to a friend or colleague?\",\"required\":true,\"position\":0}')",
+      "Bash(python3 -c \"import sys,json; print\\(json.load\\(sys.stdin\\)['id']\\)\")",
+      "Bash(git -C /Users/duggu/Claude/Projects/Survey status)",
+      "Bash(git -C /Users/duggu/Claude/Projects/Survey log --oneline -3)",
+      "Bash(git init *)",
+      "Bash(git branch *)",
+      "Bash(git -C /Users/duggu/Claude/Projects/Survey add .gitignore backend/main.py backend/schema.sql frontend/app frontend/lib frontend/postcss.config.mjs frontend/tailwind.config.ts)",
+      "Bash(git -C /Users/duggu/Claude/Projects/Survey add backend/ frontend/ .claude/launch.json)",
+      "Bash(git -C /Users/duggu/Claude/Projects/Survey status --short)",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SurveyAI — Builder Prototype</title>
+<style>
+  :root{
+    --accent:#2E5BFF; --accent-dark:#1F45D6; --bg:#F5F7FA; --card:#FFFFFF;
+    --text:#1F2937; --grey:#6B7280; --border:#E3E8EF;
+    --ai:#7B4FA0; --ai-bg:#F1E9F7; --ai-border:#E4D6F0;
+    --green:#1E9E5A; --green-bg:#E7F8EF; --amber:#C9882E; --amber-bg:#FDF1E0;
+    --red:#D23B3B; --red-bg:#FBEAEA;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  .topbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-bottom:1px solid var(--border);padding:12px 24px;}
+  .brand{font-weight:700;font-size:18px;color:var(--accent);}
+  .nav{display:flex;gap:24px;font-size:14px;color:var(--grey);}
+  .nav span{cursor:pointer;}
+  .nav span.active{color:var(--accent);font-weight:600;}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--accent);color:white;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;}
+  .container{max-width:1120px;margin:0 auto;padding:32px 24px;}
+  h1{font-size:22px;margin:0 0 4px;}
+  .sub{color:var(--grey);font-size:13px;margin-bottom:24px;}
+  .btn{background:var(--accent);color:white;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+  .btn:hover{background:var(--accent-dark);}
+  .btn.secondary{background:white;color:var(--accent);border:1px solid var(--accent);}
+  .btn.ghost{background:transparent;color:var(--grey);border:1px solid var(--border);}
+  .btn.purple{background:var(--ai);}
+  .btn.purple:hover{background:#623f86;}
+  .btn:disabled{opacity:.6;cursor:default;}
+  .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+  .surveylist{display:flex;flex-direction:column;gap:10px;}
+  .surveyrow{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;}
+  .surveyrow .title{font-weight:600;font-size:14px;}
+  .surveyrow .meta{color:var(--grey);font-size:12px;margin-top:2px;}
+  .badge{font-size:11px;padding:3px 8px;border-radius:20px;font-weight:600;}
+  .badge.live{background:var(--green-bg);color:var(--green);}
+  .badge.draft{background:var(--amber-bg);color:var(--amber);}
+
+  /* MODAL */
+  .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.45);display:none;align-items:flex-start;justify-content:center;z-index:50;overflow-y:auto;padding:40px 16px;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:white;border-radius:14px;padding:28px;width:680px;max-width:94vw;}
+  .modal h2{margin:0 0 6px;font-size:20px;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
+  .field select{width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit;background:white;}
+  .seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content;}
+  .seg span{padding:8px 16px;font-size:13px;cursor:pointer;color:var(--grey);}
+  .seg span.active{background:var(--text);color:white;}
+  .seg-hint{font-size:11px;color:var(--grey);margin-top:5px;}
+  .methods-label{font-size:13px;font-weight:600;margin:20px 0 10px;}
+  .methods-label .req{color:var(--red);}
+  .methods{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  .method-card{border:1.5px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:.15s;}
+  .method-card:hover{border-color:var(--accent);background:#F6F9FF;}
+  .method-card.active{border-color:var(--accent);background:#F0F4FF;box-shadow:0 0 0 1px var(--accent) inset;}
+  .method-icon{width:30px;height:30px;border-radius:7px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:15px;margin-bottom:8px;}
+  .method-card .name{font-weight:600;font-size:13px;}
+  .method-card .desc{font-size:11px;color:var(--grey);margin-top:3px;line-height:1.35;}
+  .modal-footer{display:flex;justify-content:space-between;align-items:center;margin-top:22px;border-top:1px solid var(--border);padding-top:16px;}
+  .modal-footer .hint{font-size:11.5px;color:var(--grey);font-style:italic;}
+  .modal-actions{display:flex;gap:10px;}
+
+  .start-modes{display:flex;flex-direction:column;gap:10px;margin:18px 0 22px;}
+  .mode-card{border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;transition:.15s;}
+  .mode-card:hover{border-color:var(--accent);background:#F6F9FF;}
+  .mode-card.ai{border-color:var(--ai-border);}
+  .mode-card.ai:hover{border-color:var(--ai);background:var(--ai-bg);}
+  .mode-card .tag{display:inline-block;font-size:10px;font-weight:700;color:var(--ai);background:var(--ai-bg);padding:2px 7px;border-radius:5px;margin-left:8px;}
+  .mode-card .name{font-weight:600;font-size:14px;}
+  .mode-card .desc{font-size:12px;color:var(--grey);margin-top:3px;}
+
+  .screen{display:none;}
+  .screen.show{display:block;}
+
+  /* BUILDER HEADER + TABS */
+  .builder-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;}
+  .builder-id{color:var(--grey);font-size:12px;}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:18px 0 22px;flex-wrap:wrap;}
+  .tab{font-size:13.5px;font-weight:600;color:var(--grey);padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px;}
+  .tab:hover{color:var(--accent);}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .tab-panel{display:none;}
+  .tab-panel.show{display:block;}
+
+  .panel-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;}
+  .panel-card h2{font-size:16px;margin:0 0 4px;}
+  .panel-card .pdesc{font-size:12.5px;color:var(--grey);margin-bottom:18px;}
+
+  .builder-layout{display:flex;gap:18px;}
+  .qtypes{width:190px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;height:fit-content;}
+  .qtypes h3{font-size:12px;text-transform:uppercase;color:var(--grey);margin:0 0 10px;}
+  .qtype-item{font-size:13px;padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:4px;}
+  .qtype-item:hover{background:var(--bg);}
+  .canvas{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0;}
+  .qcard{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;}
+  .qcard .qhead{display:flex;justify-content:space-between;align-items:flex-start;}
+  .qcard input.qtext{border:none;font-size:15px;font-weight:600;width:100%;outline:none;background:transparent;}
+  .qcard .qtypelabel{font-size:11px;color:var(--accent);background:#EEF2FF;padding:2px 8px;border-radius:6px;white-space:nowrap;margin-left:10px;}
+  .opt{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--grey);}
+  .opt input[type=text]{border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;flex:1;}
+  .ai-actions-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+  .ai-chip{font-size:11.5px;font-weight:600;color:var(--ai);background:var(--ai-bg);border:1px solid var(--ai-border);padding:5px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:4px;}
+  .ai-chip:hover{background:#E7D9F2;}
+  .ai-toast{font-size:11.5px;color:var(--ai);background:white;border:1px dashed var(--ai-border);border-radius:6px;padding:5px 9px;margin-top:8px;display:none;}
+  .qfooter{display:flex;justify-content:space-between;align-items:center;margin-top:12px;border-top:1px solid var(--border);padding-top:10px;}
+  .logic-toggle{font-size:12px;color:var(--grey);display:flex;align-items:center;gap:6px;cursor:pointer;}
+  .remove-q{font-size:12px;color:var(--red);cursor:pointer;}
+  .empty{text-align:center;color:var(--grey);font-size:13px;padding:40px 0;}
+
+  .ai-box{background:var(--ai-bg);border:1px solid var(--ai-border);border-radius:10px;padding:18px;margin-bottom:16px;}
+  .ai-box .label{font-size:11px;font-weight:700;color:var(--ai);text-transform:uppercase;margin-bottom:8px;}
+  .ai-box textarea{width:100%;border:1px solid var(--ai-border);border-radius:8px;padding:10px;font-size:13px;font-family:inherit;resize:vertical;min-height:60px;}
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--ai-border);border-top-color:var(--ai);border-radius:50%;animation:spin 0.7s linear infinite;margin-right:6px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .mock-note{font-size:11px;color:var(--ai);background:white;border:1px dashed var(--ai-border);border-radius:6px;padding:6px 10px;margin-top:10px;}
+
+  .g2i-result{background:white;border:1px solid var(--ai-border);border-radius:8px;padding:14px;margin-top:12px;font-size:13px;}
+  .g2i-result b{color:var(--ai);}
+
+  .footer-actions{position:sticky;bottom:0;background:var(--bg);padding:16px 0;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--border);margin-top:20px;}
+  .topcrumb{font-size:13px;color:var(--grey);margin-bottom:10px;cursor:pointer;}
+  .topcrumb:hover{color:var(--accent);}
+
+  /* LOGIC TAB */
+  .subtabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--border);}
+  .subtab{font-size:13px;font-weight:600;color:var(--grey);padding:8px 4px;margin-right:22px;cursor:pointer;border-bottom:2px solid transparent;}
+  .subtab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .subtab-panel{display:none;}
+  .subtab-panel.show{display:block;}
+  .varbox{background:#EEF2FF;border:1px solid #D7E0FF;border-radius:10px;padding:14px 16px;margin-bottom:18px;}
+  .varbox .lbl{font-size:12.5px;font-weight:600;color:var(--accent-dark);margin-bottom:8px;}
+  .varchip{display:inline-block;font-size:12px;font-family:monospace;background:white;border:1px solid #C7D3FF;color:var(--accent-dark);padding:4px 10px;border-radius:20px;margin:0 6px 6px 0;}
+  .rule-card{border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;}
+  .rule-card .rtitle{font-weight:600;font-size:13.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+  .rule-card .cond-box{background:var(--bg);border-radius:8px;padding:10px 12px;font-size:12.5px;}
+  .cond-line{padding:5px 0;color:var(--text);}
+  .cond-line b{color:var(--accent-dark);}
+  .then-box{background:#F1E9F7;border-radius:8px;padding:10px 12px;font-size:12.5px;margin-top:8px;color:#5A3A78;font-weight:600;}
+
+  /* CONFIGURATION TAB */
+  .cfg-section{margin-bottom:24px;}
+  .cfg-section h3{font-size:13px;text-transform:uppercase;color:var(--grey);margin:0 0 12px;}
+  .cfg-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);}
+  .cfg-row:last-child{border-bottom:none;}
+  .cfg-row .name{font-weight:600;font-size:13.5px;}
+  .cfg-row .desc{font-size:12px;color:var(--grey);margin-top:2px;}
+  .switch{position:relative;width:42px;height:24px;border-radius:14px;background:var(--border);cursor:pointer;flex-shrink:0;transition:.15s;}
+  .switch.on{background:var(--accent);}
+  .switch .knob{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s;}
+  .switch.on .knob{left:21px;}
+  .cfg-input-row{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .cfg-input-row .field input{width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:13px;}
+
+  /* INSIGHTS TAB (overview-style stats) */
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .stat-tile{border-radius:10px;padding:18px;}
+  .stat-tile.blue{background:#EEF2FF;}
+  .stat-tile.green{background:var(--green-bg);}
+  .stat-tile.purple{background:var(--ai-bg);}
+  .stat-tile .num{font-size:26px;font-weight:700;}
+  .stat-tile.blue .num{color:var(--accent-dark);}
+  .stat-tile.green .num{color:var(--green);}
+  .stat-tile.purple .num{color:var(--ai);}
+  .stat-tile .lbl{font-size:12.5px;font-weight:600;margin-top:4px;}
+
+  /* EXPERT REVIEW TAB */
+  .review-item{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .review-item:last-child{border-bottom:none;}
+  .review-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+  .review-dot.amber{background:var(--amber);}
+  .review-dot.green{background:var(--green);}
+  .ai-badge{display:inline-block;font-size:10px;font-weight:700;color:var(--ai);background:var(--ai-bg);padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">SurveyAI</div>
+  <div class="nav">
+    <span class="active">Surveys</span>
+    <span>Templates</span>
+    <span>Team</span>
+    <span>Billing</span>
+    <span>Admin Panel</span>
+  </div>
+  <div class="avatar">D</div>
+</div>
+
+<div class="container">
+
+  <!-- DASHBOARD SCREEN -->
+  <div class="screen show" id="dashboard">
+    <div class="row">
+      <div>
+        <h1>Surveys</h1>
+        <div class="sub">Org: Durgesh's Workspace &middot; Free plan</div>
+      </div>
+      <button class="btn" onclick="openModal()">+ Create New</button>
+    </div>
+    <div class="surveylist" id="surveylist"></div>
+  </div>
+
+  <!-- BUILDER SCREEN (tabbed) -->
+  <div class="screen" id="builder">
+    <div class="topcrumb" onclick="showScreen('dashboard')">&larr; Back to Overview</div>
+    <div class="builder-head">
+      <div>
+        <h1 id="builderTitle">Untitled Survey</h1>
+        <div class="builder-id" id="builderMeta">Survey ID: SRV-2026-DRAFT &middot; Draft</div>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn ghost" onclick="alert('Draft saved (mock)')">Save Draft</button>
+        <button class="btn" onclick="publish()">Publish Survey</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="overview" onclick="showTab('overview')">📊 Overview</div>
+      <div class="tab" data-tab="build" onclick="showTab('build')">✎ Build</div>
+      <div class="tab" data-tab="logic" onclick="showTab('logic')">🔀 Logic</div>
+      <div class="tab" data-tab="config" onclick="showTab('config')">⚙ Configuration</div>
+      <div class="tab" data-tab="share" onclick="showTab('share')">📤 Share</div>
+      <div class="tab" data-tab="insights" onclick="showTab('insights')">📈 Insights</div>
+      <div class="tab" data-tab="expert" onclick="showTab('expert')">✨ Expert Review</div>
+    </div>
+
+    <!-- OVERVIEW TAB -->
+    <div class="tab-panel show" id="tab-overview">
+      <div class="panel-card">
+        <h2>Overview Analytics</h2>
+        <div class="pdesc">View comprehensive analytics and insights for your survey.</div>
+        <div class="stat-grid">
+          <div class="stat-tile blue"><div class="num" id="ovResponses">0</div><div class="lbl" style="color:var(--accent-dark);">Total Responses</div></div>
+          <div class="stat-tile green"><div class="num">0%</div><div class="lbl" style="color:var(--green);">Completion Rate</div></div>
+          <div class="stat-tile purple"><div class="num">--</div><div class="lbl" style="color:var(--ai);">Avg. Time</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUILD TAB -->
+    <div class="tab-panel" id="tab-build">
+      <div id="startModeBanner" class="start-modes" style="display:none;">
+        <div class="mode-card" onclick="startMode('manual')">
+          <span class="name">Build it myself</span>
+          <div class="desc">Drag-and-drop builder, full control over every question.</div>
+        </div>
+        <div class="mode-card ai" onclick="startMode('prompt')">
+          <span class="name">Describe it, AI drafts it</span><span class="tag">AI</span>
+          <div class="desc">One prompt → a full editable draft survey.</div>
+        </div>
+        <div class="mode-card ai" onclick="startMode('g2i')">
+          <span class="name">I don't know where to start</span><span class="tag">AI</span>
+          <div class="desc">Tell AI your business question — it recommends a method, builds the survey, and will hand back a verdict report once responses are in.</div>
+        </div>
+      </div>
+
+      <div id="aiPromptBox" style="display:none;" class="ai-box">
+        <div class="label">⚡ AI Prompt-to-Survey</div>
+        <textarea id="aiPromptInput" placeholder="e.g. I want to know if customers would pay $15/month for a new feature">I want to know if customers would pay $15/month for a new feature</textarea>
+        <div style="margin-top:10px;"><button class="btn purple" onclick="generateFromPrompt()">Generate Draft</button></div>
+        <div class="mock-note">Mocked response — no live AI API call. Real generation wires in during Phase 4.</div>
+      </div>
+
+      <div id="g2iBox" style="display:none;" class="ai-box">
+        <div class="label">🎯 Goal-to-Insight Intake</div>
+        <textarea id="g2iInput" placeholder="What do you want to find out?">Will people pay $15/month for our new analytics feature?</textarea>
+        <div style="margin-top:10px;"><button class="btn purple" onclick="runGoalToInsight()">Get AI Recommendation</button></div>
+        <div id="g2iOutput"></div>
+        <div class="mock-note">Mocked response — no live AI API call.</div>
+      </div>
+
+      <div class="builder-layout">
+        <div class="qtypes">
+          <h3>Add Question</h3>
+          <div class="qtype-item" onclick="addQuestion('Single Choice')">◉ Single choice</div>
+          <div class="qtype-item" onclick="addQuestion('Multi-Select')">☑ Multi-select</div>
+          <div class="qtype-item" onclick="addQuestion('Rating Scale')">★ Rating scale</div>
+          <div class="qtype-item" onclick="addQuestion('NPS')">📊 NPS (0–10)</div>
+          <div class="qtype-item" onclick="addQuestion('Short Text')">✎ Short text</div>
+          <div class="qtype-item" onclick="addQuestion('Long Text')">📝 Long text</div>
+          <div class="qtype-item" onclick="addQuestion('Yes/No')">⬤ Yes / No</div>
+          <div class="qtype-item" onclick="addQuestion('Matrix/Likert')">▦ Matrix / Likert</div>
+          <div class="qtype-item" onclick="addQuestion('Ranking')">⇕ Ranking</div>
+          <div class="qtype-item" onclick="addQuestion('Date/Time')">📅 Date / time</div>
+        </div>
+        <div class="canvas" id="canvas"></div>
+      </div>
+    </div>
+
+    <!-- LOGIC TAB -->
+    <div class="tab-panel" id="tab-logic">
+      <div class="panel-card">
+        <h2>Logic &amp; Flow Control</h2>
+        <div class="pdesc">Set up conditional logic and branching based on responses.</div>
+        <div class="subtabs">
+          <div class="subtab active" data-sub="skip" onclick="showSubtab('skip')">Skip Logic</div>
+          <div class="subtab" data-sub="compound" onclick="showSubtab('compound')">Compound Logic</div>
+          <div class="subtab" data-sub="showq" onclick="showSubtab('showq')">Show/Hide Questions</div>
+          <div class="subtab" data-sub="showo" onclick="showSubtab('showo')">Show/Hide Options</div>
+        </div>
+
+        <div class="subtab-panel show" id="sub-skip">
+          <div class="cond-line" style="margin-bottom:12px;color:var(--grey);">Simple per-question skip rules, set from the toggle on each question in the Build tab.</div>
+          <div class="rule-card">
+            <div class="rtitle">🔀 Q2 → if "No", skip to Q4</div>
+            <div class="cond-box"><div class="cond-line">If <b>Q2: Would you recommend us?</b> equals <b>"No"</b> → jump to <b>Q4</b></div></div>
+          </div>
+        </div>
+
+        <div class="subtab-panel" id="sub-compound">
+          <div class="row" style="margin-bottom:14px;">
+            <div class="sub" style="margin:0;">Create complex conditions using multiple filters and variables.</div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn ghost" onclick="alert('Variable created (mock)')">⚛ Create Variable</button>
+              <button class="btn purple" onclick="alert('New compound rule added (mock)')">+ Add Compound Logic</button>
+            </div>
+          </div>
+          <div class="varbox">
+            <div class="lbl">⚛ Available Variables</div>
+            <span class="varchip">$user_segment</span>
+            <span class="varchip">$satisfaction_score</span>
+            <span class="varchip">$product_usage</span>
+          </div>
+          <div class="rule-card">
+            <div class="rtitle">🔻 Rule #1: Premium User Pathway</div>
+            <div class="cond-box">
+              <div class="cond-line" style="font-weight:600;color:var(--grey);font-size:11.5px;text-transform:uppercase;">Conditions (ALL must be true)</div>
+              <div class="cond-line">▽ <b>Q1: Subscription Type</b> equals <b>"Premium"</b></div>
+              <div class="cond-line">▽ Variable: <b>$satisfaction_score</b> greater than <b>8</b></div>
+              <div class="cond-line">▽ <b>Q3: Usage Frequency</b> equals <b>"Daily"</b></div>
+            </div>
+            <div class="then-box">THEN → Route to "Power User" follow-up branch</div>
+          </div>
+        </div>
+
+        <div class="subtab-panel" id="sub-showq">
+          <div class="cond-line" style="color:var(--grey);">Show or hide entire questions based on prior answers — configured per question from the Build tab question editor.</div>
+        </div>
+        <div class="subtab-panel" id="sub-showo">
+          <div class="cond-line" style="color:var(--grey);">Show or hide individual answer options dynamically based on earlier responses or variables.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONFIGURATION TAB -->
+    <div class="tab-panel" id="tab-config">
+      <div class="panel-card">
+        <h2>Survey Configuration</h2>
+        <div class="pdesc">Configure quality settings, response validation, and survey controls.</div>
+
+        <div class="cfg-section">
+          <h3>Quality Settings</h3>
+          <div class="cfg-row">
+            <div><div class="name">Require Response</div><div class="desc">Make all questions mandatory</div></div>
+            <div class="switch" onclick="this.classList.toggle('on')"><div class="knob"></div></div>
+          </div>
+          <div class="cfg-row">
+            <div><div class="name">Prevent Multiple Submissions</div><div class="desc">One response per user</div></div>
+            <div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div>
+          </div>
+          <div class="cfg-row">
+            <div><div class="name">Randomize Questions</div><div class="desc">Show questions in random order</div></div>
+            <div class="switch" onclick="this.classList.toggle('on')"><div class="knob"></div></div>
+          </div>
+        </div>
+
+        <div class="cfg-section">
+          <h3>Survey Controls</h3>
+          <div class="cfg-input-row">
+            <div class="field"><label>Close Date</label><input type="date"></div>
+            <div class="field"><label>Response Limit</label><input type="number" placeholder="e.g., 1000"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SHARE TAB -->
+    <div class="tab-panel" id="tab-share">
+      <div class="panel-card">
+        <h2>Share &amp; Distribute</h2>
+        <div class="pdesc">Your survey is live and ready to collect responses once published.</div>
+        <div class="surveyrow" style="margin-bottom:10px;">
+          <div>
+            <div class="title">Shareable link</div>
+            <div class="meta">surveyai.app/s/abc123</div>
+          </div>
+          <button class="btn secondary" onclick="alert('Link copied (mock)')">Copy Link</button>
+        </div>
+        <div class="surveyrow" style="margin-bottom:10px;">
+          <div>
+            <div class="title">Embed on your site</div>
+            <div class="meta">&lt;iframe src="surveyai.app/embed/abc123"&gt;</div>
+          </div>
+          <button class="btn secondary" onclick="alert('Embed code copied (mock)')">Copy Code</button>
+        </div>
+        <div class="surveyrow">
+          <div>
+            <div class="title">Email invite</div>
+            <div class="meta">Send to a list via your provider</div>
+          </div>
+          <button class="btn secondary" onclick="alert('Email invite flow (mock)')">Send Invite</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- INSIGHTS TAB -->
+    <div class="tab-panel" id="tab-insights">
+      <div class="panel-card">
+        <h2>Insights <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">Live response analytics appear here once your survey starts collecting data.</div>
+        <div class="stat-grid">
+          <div class="stat-tile blue"><div class="num">0</div><div class="lbl" style="color:var(--accent-dark);">Total Responses</div></div>
+          <div class="stat-tile green"><div class="num">0%</div><div class="lbl" style="color:var(--green);">Completion Rate</div></div>
+          <div class="stat-tile purple"><div class="num">--</div><div class="lbl" style="color:var(--ai);">Avg. Time</div></div>
+        </div>
+        <div class="mock-note" style="margin-top:18px;">Once a survey is live, this tab shows the full AI analysis dashboard — sentiment, themes, heat maps, and the Goal-to-Insight verdict report (see the companion AI Analysis Dashboard prototype).</div>
+      </div>
+    </div>
+
+    <!-- EXPERT REVIEW TAB -->
+    <div class="tab-panel" id="tab-expert">
+      <div class="panel-card">
+        <h2>Expert Review <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">AI scans your survey for bias, length, clarity, and structure issues before you publish.</div>
+        <button class="btn purple" onclick="runExpertReview()">✨ Run Expert Review</button>
+        <div id="expertOutput" style="margin-top:16px;"></div>
+        <div class="mock-note">Mocked review — no live AI API call. Real review wires in during Phase 4.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PREVIEW SCREEN -->
+  <div class="screen" id="preview">
+    <div class="topcrumb" onclick="showScreen('builder')">&larr; Back to Builder</div>
+    <h1>Preview</h1>
+    <div class="sub">This is what the respondent will see (classic mode)</div>
+    <div id="previewCanvas" style="max-width:560px;"></div>
+  </div>
+
+  <!-- PUBLISHED SCREEN -->
+  <div class="screen" id="distribute">
+    <div class="topcrumb" onclick="showScreen('dashboard')">&larr; Back to Surveys</div>
+    <h1>🎉 Published</h1>
+    <div class="sub">Your survey is live — manage distribution any time from the Share tab.</div>
+    <div class="footer-actions" style="border-top:none;">
+      <button class="btn" onclick="showScreen('dashboard')">Go to Dashboard</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- CREATE MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2>Create New Survey</h2>
+    <div class="sub" style="margin-bottom:0;">Set up your survey basics to get started.</div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Industry</label>
+        <select id="industrySelect">
+          <option>General / Other</option>
+          <option>Travel</option>
+          <option>Retail &amp; E-commerce</option>
+          <option>SaaS / Technology</option>
+          <option>Healthcare</option>
+          <option>Financial Services</option>
+          <option>Education</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Visibility</label>
+        <div class="seg" id="visibilitySeg">
+          <span class="active" data-v="private" onclick="setVisibility('private')">Private</span>
+          <span data-v="public" onclick="setVisibility('public')">Public</span>
+        </div>
+        <div class="seg-hint" id="visibilityHint">Only you and invited collaborators can access</div>
+      </div>
+    </div>
+
+    <div class="methods-label">Survey Method / Type <span class="req">*</span></div>
+    <div class="methods" id="methodGrid"></div>
+
+    <div class="modal-footer">
+      <div class="hint">Draft will be auto-saved</div>
+      <div class="modal-actions">
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn" onclick="createSurvey()">Create &amp; Continue to Build</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let surveys = [
+  {title:"Customer Satisfaction Q2", status:"live", responses:142},
+  {title:"New Feature Pricing — Concept Test", status:"draft", responses:0},
+];
+let questions = [];
+let qCounter = 0;
+let selectedMethod = 'classic';
+let selectedVisibility = 'private';
+
+const methods = [
+  {id:'classic', icon:'📄', name:'Classic Survey', desc:'Traditional form-based questionnaire'},
+  {id:'whatsapp', icon:'💬', name:'WhatsApp Survey', desc:'Conversational chat-based survey'},
+  {id:'video', icon:'🎥', name:'Video Review', desc:'Video-based feedback collection'},
+  {id:'usertest', icon:'🧪', name:'User Testing', desc:'Usability and UX testing sessions'},
+  {id:'onetoone', icon:'🙋', name:'One-to-One', desc:'Individual interview format'},
+  {id:'pulse', icon:'📈', name:'Pulse / NPS', desc:'Quick satisfaction metrics'},
+  {id:'poll', icon:'📊', name:'Poll', desc:'Single-question quick poll'},
+];
+
+function renderMethodGrid(){
+  const el = document.getElementById('methodGrid');
+  el.innerHTML = methods.map(m => `
+    <div class="method-card ${m.id===selectedMethod?'active':''}" onclick="selectMethod('${m.id}')">
+      <div class="method-icon">${m.icon}</div>
+      <div class="name">${m.name}</div>
+      <div class="desc">${m.desc}</div>
+    </div>`).join('');
+}
+function selectMethod(id){ selectedMethod = id; renderMethodGrid(); }
+function setVisibility(v){
+  selectedVisibility = v;
+  document.querySelectorAll('#visibilitySeg span').forEach(s=>s.classList.toggle('active', s.dataset.v===v));
+  document.getElementById('visibilityHint').innerText = v==='private' ? 'Only you and invited collaborators can access' : 'Anyone with the link can respond';
+}
+renderMethodGrid();
+
+function renderSurveyList(){
+  const el = document.getElementById('surveylist');
+  el.innerHTML = surveys.map(s => `
+    <div class="surveyrow">
+      <div>
+        <div class="title">${s.title}</div>
+        <div class="meta">${s.responses} responses</div>
+      </div>
+      <span class="badge ${s.status}">${s.status === 'live' ? 'Live' : 'Draft'}</span>
+    </div>`).join('');
+}
+renderSurveyList();
+
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('show'));
+  document.getElementById(id).classList.add('show');
+  window.scrollTo(0,0);
+  if(id==='preview'){ renderPreview(); }
+}
+function openModal(){ document.getElementById('modalOverlay').classList.add('show'); }
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('show'); }
+
+function showTab(tab){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('show'));
+  document.getElementById('tab-'+tab).classList.add('show');
+}
+function showSubtab(sub){
+  document.querySelectorAll('.subtab').forEach(t=>t.classList.toggle('active', t.dataset.sub===sub));
+  document.querySelectorAll('.subtab-panel').forEach(p=>p.classList.remove('show'));
+  document.getElementById('sub-'+sub).classList.add('show');
+}
+
+function createSurvey(){
+  closeModal();
+  questions = [];
+  document.getElementById('aiPromptBox').style.display = 'none';
+  document.getElementById('g2iBox').style.display = 'none';
+  const methodObj = methods.find(m=>m.id===selectedMethod);
+  document.getElementById('builderTitle').innerText = 'Untitled Survey';
+  document.getElementById('builderMeta').innerText =
+    `Survey ID: SRV-2026-${Math.random().toString(36).slice(2,8).toUpperCase()} · Draft · ${methodObj.name} · ${selectedVisibility==='private'?'Private':'Public'}`;
+  renderCanvas();
+  showTab('overview');
+  if(methodObj.id==='classic' || methodObj.id==='whatsapp' || methodObj.id==='pulse' || methodObj.id==='poll'){
+    document.getElementById('startModeBanner').style.display = 'flex';
+  } else {
+    document.getElementById('startModeBanner').style.display = 'none';
+  }
+  showScreen('builder');
+}
+
+function startMode(mode){
+  document.getElementById('startModeBanner').style.display = 'none';
+  document.getElementById('aiPromptBox').style.display = mode==='prompt' ? 'block' : 'none';
+  document.getElementById('g2iBox').style.display = mode==='g2i' ? 'block' : 'none';
+  if(mode==='g2i'){ document.getElementById('g2iOutput').innerHTML=''; }
+  showTab('build');
+}
+
+function addQuestion(type){
+  qCounter++;
+  let opts = ['Single Choice','Multi-Select','Ranking'].includes(type) ? ['Option 1','Option 2'] : null;
+  questions.push({id:qCounter, type, text:`Untitled ${type} question`, options:opts, logic:false});
+  renderCanvas();
+}
+function removeQuestion(id){
+  questions = questions.filter(q=>q.id!==id);
+  renderCanvas();
+}
+function toggleLogic(id){
+  const q = questions.find(q=>q.id===id);
+  q.logic = !q.logic;
+  renderCanvas();
+}
+function updateQText(id, val){
+  const q = questions.find(q=>q.id===id);
+  q.text = val;
+}
+
+function aiAction(id, action){
+  const q = questions.find(q=>q.id===id);
+  const toast = document.getElementById('toast-'+id);
+  toast.style.display = 'block';
+  toast.innerHTML = '<span class="spinner"></span>Applying AI action...';
+  setTimeout(()=>{
+    if(action==='rephrase'){
+      q.text = q.text.replace(/^Untitled/, 'Revised');
+      renderCanvas();
+      return;
+    }
+    if(action==='concise'){
+      toast.innerHTML = '✨ Shortened wording (mocked) — real call wires in during Phase 4.';
+      return;
+    }
+    if(action==='suggest'){
+      addQuestion('Short Text');
+      return;
+    }
+    if(action==='tone'){
+      toast.innerHTML = '✨ Tone set to "Friendly" (mocked).';
+      return;
+    }
+  }, 700);
+}
+
+function renderCanvas(){
+  const el = document.getElementById('canvas');
+  if(questions.length===0){
+    el.innerHTML = `<div class="qcard empty">No questions yet — add one from the left, or use AI generation above.</div>`;
+    return;
+  }
+  el.innerHTML = questions.map(q => `
+    <div class="qcard">
+      <div class="qhead">
+        <input class="qtext" value="${q.text}" oninput="updateQText(${q.id}, this.value)">
+        <span class="qtypelabel">${q.type}</span>
+      </div>
+      ${q.options ? q.options.map(o=>`<div class="opt">○ <input type="text" value="${o}"></div>`).join('') : ''}
+      <div class="ai-actions-row">
+        <span class="ai-chip" onclick="aiAction(${q.id},'suggest')">✨ Suggest Questions</span>
+        <span class="ai-chip" onclick="aiAction(${q.id},'rephrase')">✨ Rephrase</span>
+        <span class="ai-chip" onclick="aiAction(${q.id},'concise')">✨ Make Concise</span>
+        <span class="ai-chip" onclick="aiAction(${q.id},'tone')">✨ Change Tone ▾</span>
+      </div>
+      <div class="ai-toast" id="toast-${q.id}"></div>
+      <div class="qfooter">
+        <span class="logic-toggle" onclick="toggleLogic(${q.id})">${q.logic ? '🔀 Skip logic: ON (go to Q+2 if "No")' : '+ Add skip logic'}</span>
+        <span class="remove-q" onclick="removeQuestion(${q.id})">Remove</span>
+      </div>
+    </div>`).join('');
+}
+renderCanvas();
+
+function generateFromPrompt(){
+  const btn = event.target;
+  btn.innerHTML = '<span class="spinner"></span>Generating...';
+  btn.disabled = true;
+  setTimeout(()=>{
+    document.getElementById('builderTitle').innerText = 'Feature Pricing Survey (AI draft)';
+    questions = [
+      {id:++qCounter, type:'NPS', text:'How likely are you to recommend our product to a friend or colleague?', options:null, logic:false},
+      {id:++qCounter, type:'Single Choice', text:'Would you pay $15/month for this new feature?', options:['Definitely yes','Probably yes','Not sure','Probably not','Definitely not'], logic:true},
+      {id:++qCounter, type:'Rating Scale', text:'How valuable would this feature be to your workflow?', options:null, logic:false},
+      {id:++qCounter, type:'Long Text', text:'What would make this feature more worth paying for?', options:null, logic:false},
+    ];
+    renderCanvas();
+    btn.innerHTML = 'Generate Draft';
+    btn.disabled = false;
+  }, 1100);
+}
+
+function runGoalToInsight(){
+  const btn = event.target;
+  btn.innerHTML = '<span class="spinner"></span>Thinking...';
+  btn.disabled = true;
+  setTimeout(()=>{
+    document.getElementById('g2iOutput').innerHTML = `
+      <div class="g2i-result">
+        <div><b>Recommended method:</b> Concept Test (single concept, purchase-intent focus)</div>
+        <div style="margin-top:6px;"><b>Suggested sample size:</b> ~120 respondents for a reliable read</div>
+        <div style="margin-top:6px;"><b>Suggested audience:</b> Existing customers who used the product in the last 30 days</div>
+        <div style="margin-top:10px;"><button class="btn purple" onclick="buildFromG2I()">Build this survey</button></div>
+      </div>`;
+    btn.innerHTML = 'Get AI Recommendation';
+    btn.disabled = false;
+  }, 1300);
+}
+function buildFromG2I(){
+  document.getElementById('builderTitle').innerText = 'Will people pay $15/month? (Goal-to-Insight)';
+  questions = [
+    {id:++qCounter, type:'Single Choice', text:'After seeing this feature, how likely are you to purchase it at $15/month?', options:['Very likely','Likely','Neutral','Unlikely','Very unlikely'], logic:false},
+    {id:++qCounter, type:'Rating Scale', text:'How would you rate the value of this feature?', options:null, logic:false},
+    {id:++qCounter, type:'Rating Scale', text:'How unique is this compared to alternatives you know of?', options:null, logic:false},
+    {id:++qCounter, type:'Long Text', text:'What, if anything, would stop you from purchasing?', options:null, logic:true},
+  ];
+  renderCanvas();
+}
+
+function runExpertReview(){
+  const btn = event.target;
+  const out = document.getElementById('expertOutput');
+  btn.innerHTML = '<span class="spinner"></span>Reviewing survey...';
+  btn.disabled = true;
+  out.innerHTML = '';
+  setTimeout(()=>{
+    out.innerHTML = `
+      <div class="review-item"><span class="review-dot amber"></span><div><b>Q2 wording may lead respondents.</b> "Don't you agree this feature is useful?" implies a desired answer — consider neutral phrasing.</div></div>
+      <div class="review-item"><span class="review-dot amber"></span><div><b>Survey length:</b> 7 questions, ~3 min — within the recommended range for completion rate above 80%.</div></div>
+      <div class="review-item"><span class="review-dot green"></span><div><b>Question order looks good.</b> Sensitive/demographic questions are placed at the end, which is best practice.</div></div>
+    `;
+    btn.innerHTML = '✨ Run Expert Review';
+    btn.disabled = false;
+  }, 1200);
+}
+
+function publish(){
+  surveys.unshift({title: document.getElementById('builderTitle').innerText, status:'live', responses:0});
+  renderSurveyList();
+  showScreen('distribute');
+}
+
+function renderPreview(){
+  const el = document.getElementById('previewCanvas');
+  if(questions.length===0){ el.innerHTML = '<div class="empty">No questions to preview yet.</div>'; return; }
+  el.innerHTML = questions.map((q,i)=>`
+    <div class="qcard" style="margin-bottom:12px;">
+      <div style="font-weight:600;font-size:14px;margin-bottom:8px;">${i+1}. ${q.text}</div>
+      ${q.options ? q.options.map(o=>`<div class="opt">○ ${o}</div>`).join('') :
+        q.type==='Long Text' ? '<textarea style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px;" rows="3" placeholder="Type your answer..."></textarea>' :
+        q.type==='Short Text' ? '<input type="text" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px;" placeholder="Type your answer...">' :
+        q.type==='NPS' ? '<div style="display:flex;gap:4px;">'+[...Array(11).keys()].map(n=>`<div style="width:24px;height:24px;border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;">${n}</div>`).join('')+'</div>' :
+        q.type==='Rating Scale' ? '<div style="font-size:18px;color:#F0B429;">★ ★ ★ ★ ★</div>' :
+        q.type==='Yes/No' ? '<div class="opt">○ Yes</div><div class="opt">○ No</div>' :
+        ''}
+    </div>`).join('') + '<button class="btn" style="margin-top:6px;">Submit</button>';
+}
+</script>
+</body>
+</html>

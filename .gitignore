@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# Python
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Environment files (contain secrets)
+.env
+.env.local
+backend/.env
+frontend/.env.local
+
+# Supabase schema runner (one-off script)
+backend/run_schema.py
+
+# OS
+.DS_Store

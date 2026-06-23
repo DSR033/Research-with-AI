@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SurveyAI — AI Analysis Dashboard Prototype</title>
+<style>
+  :root{
+    --accent:#2E5BFF; --bg:#F5F7FA; --card:#FFFFFF; --text:#1F2937; --grey:#6B7280;
+    --border:#E3E8EF; --ai:#7B4FA0; --ai-bg:#F1E9F7; --green:#3F7D58; --green-bg:#E7F4EC;
+    --amber:#C9882E; --amber-bg:#FDF1E0; --red:#B23B3B; --red-bg:#FBEAEA;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  .topbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-bottom:1px solid var(--border);padding:12px 24px;}
+  .brand{font-weight:700;font-size:18px;color:var(--accent);}
+  .nav{display:flex;gap:24px;font-size:14px;color:var(--grey);}
+  .nav span.active{color:var(--accent);font-weight:600;}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--accent);color:white;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;}
+  .container{max-width:1080px;margin:0 auto;padding:28px 24px 60px;}
+  h1{font-size:22px;margin:0 0 2px;}
+  .sub{color:var(--grey);font-size:13px;margin-bottom:22px;}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;}
+  .stat .label{font-size:12px;color:var(--grey);}
+  .stat .value{font-size:24px;font-weight:700;margin-top:4px;}
+  .stat .delta{font-size:11px;color:var(--green);margin-top:2px;}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;}
+  .panel h2{font-size:15px;margin:0 0 4px;}
+  .panel .pdesc{font-size:12px;color:var(--grey);margin-bottom:14px;}
+  .twocol{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;}
+
+  .stackbar{display:flex;height:14px;border-radius:7px;overflow:hidden;margin-top:8px;}
+  .seg.pos{background:var(--green);} .seg.neu{background:#C9CDD3;} .seg.neg{background:var(--red);}
+  .legend{display:flex;gap:16px;font-size:12px;margin-top:10px;color:var(--grey);}
+  .legend span{display:flex;align-items:center;gap:5px;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+
+  .theme-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px;}
+  .theme-name{width:150px;flex-shrink:0;}
+  .theme-bar-track{flex:1;background:var(--bg);border-radius:6px;height:10px;overflow:hidden;}
+  .theme-bar-fill{height:100%;background:var(--accent);}
+  .theme-count{width:34px;text-align:right;color:var(--grey);font-size:12px;}
+
+  .heatmap{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;}
+  .heat-cell{aspect-ratio:1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;}
+  .heat-labels-row{display:grid;grid-template-columns:90px repeat(5,1fr);gap:4px;font-size:10px;color:var(--grey);margin-bottom:4px;}
+  .heat-row{display:grid;grid-template-columns:90px repeat(5,1fr);gap:4px;margin-bottom:4px;align-items:center;}
+  .heat-row .rowlabel{font-size:11px;color:var(--grey);}
+
+  .ai-badge{display:inline-block;font-size:10px;font-weight:700;color:var(--ai);background:var(--ai-bg);padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle;}
+
+  .qa-box{display:flex;gap:8px;margin-bottom:14px;}
+  .qa-box input{flex:1;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;}
+  .qa-box button{background:var(--ai);color:white;border:none;border-radius:8px;padding:0 18px;font-size:13px;font-weight:600;cursor:pointer;}
+  .qa-thread{display:flex;flex-direction:column;gap:10px;}
+  .qa-q{font-weight:600;font-size:13px;}
+  .qa-a{background:var(--ai-bg);border:1px solid #E4D6F0;border-radius:10px;padding:12px 14px;font-size:13px;}
+  .qa-suggest{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .qa-suggest span{font-size:11.5px;color:var(--accent);background:#EAF3FB;padding:5px 10px;border-radius:20px;cursor:pointer;}
+
+  .verdict{background:linear-gradient(135deg,var(--ai-bg),#FFFFFF);border:1px solid #E4D6F0;border-radius:12px;padding:22px;}
+  .verdict h2{color:var(--ai);}
+  .verdict .headline{font-size:16px;font-weight:700;margin:6px 0 10px;}
+  .verdict .evidence{font-size:13px;color:var(--text);margin-bottom:6px;}
+  .verdict ul{margin:8px 0 0;padding-left:18px;font-size:13px;}
+  .verdict li{margin-bottom:4px;}
+  .mock-note{font-size:11px;color:var(--ai);background:white;border:1px dashed #C9A6DD;border-radius:6px;padding:6px 10px;margin-top:14px;display:inline-block;}
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid #E4D6F0;border-top-color:var(--ai);border-radius:50%;animation:spin 0.7s linear infinite;margin-right:6px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* Weekly distribution bars */
+  .dist-chart{display:flex;align-items:flex-end;gap:14px;height:120px;margin-top:10px;}
+  .dist-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
+  .dist-bar{width:100%;max-width:34px;background:var(--accent);border-radius:5px 5px 0 0;}
+  .dist-label{font-size:11px;color:var(--grey);margin-top:6px;}
+
+  /* Question breakdown — colored option bars */
+  .qb-block{margin-bottom:22px;}
+  .qb-block:last-child{margin-bottom:0;}
+  .qb-title{font-weight:600;font-size:13px;margin-bottom:10px;}
+  .qb-opt-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12.5px;}
+  .qb-opt-name{width:130px;flex-shrink:0;color:var(--text);}
+  .qb-opt-track{flex:1;background:var(--bg);border-radius:5px;height:12px;overflow:hidden;}
+  .qb-opt-fill{height:100%;border-radius:5px;}
+  .qb-opt-pct{width:78px;text-align:right;color:var(--grey);font-size:11.5px;}
+
+  /* Trend line */
+  .trend-wrap{margin-top:6px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">SurveyAI</div>
+  <div class="nav">
+    <span>Surveys</span><span class="active">Analysis</span><span>Templates</span><span>Team</span><span>Billing</span>
+  </div>
+  <div class="avatar">D</div>
+</div>
+
+<div class="container">
+  <h1>New Feature Pricing — Concept Test</h1>
+  <div class="sub">142 responses &middot; closed Jun 22, 2026</div>
+
+  <div class="grid4">
+    <div class="stat"><div class="label">Responses</div><div class="value">142</div><div class="delta">Target: 120 ✓ reached</div></div>
+    <div class="stat"><div class="label">Completion rate</div><div class="value">88%</div><div class="delta">▲ vs. 75% classic mode</div></div>
+    <div class="stat"><div class="label">Avg. NPS</div><div class="value">+34</div><div class="delta">▲ 6 pts vs. last wave</div></div>
+    <div class="stat"><div class="label">Aggregate sentiment</div><div class="value">72% positive</div><div class="delta">18% neutral · 10% negative</div></div>
+  </div>
+
+  <div class="twocol">
+    <div>
+      <div class="panel">
+        <h2>Response Distribution Over Time</h2>
+        <div class="pdesc">Weekly response volume since launch.</div>
+        <div class="dist-chart" id="distChart"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Question Breakdown <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">Per-option response share, color-coded by sentiment.</div>
+        <div id="qbreakdown"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Sentiment breakdown <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">Per-response sentiment scored automatically on open-text answers.</div>
+        <div class="stackbar">
+          <div class="seg pos" style="width:72%;"></div>
+          <div class="seg neu" style="width:18%;"></div>
+          <div class="seg neg" style="width:10%;"></div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:var(--green);"></span>Positive 72%</span>
+          <span><span class="dot" style="background:#C9CDD3;"></span>Neutral 18%</span>
+          <span><span class="dot" style="background:var(--red);"></span>Negative 10%</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Theme extraction <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">Auto-identified themes from open-text responses, ranked by frequency.</div>
+        <div id="themes"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Price-sensitivity heat map</h2>
+        <div class="pdesc">Purchase intent by price point × customer segment (sample advanced-analytics view).</div>
+        <div id="heatmap"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Satisfaction Trend <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">Average satisfaction score, last 6 months.</div>
+        <div class="trend-wrap" id="trendChart"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Ask your data <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">Plain-English questions over this survey's results.</div>
+        <div class="qa-suggest">
+          <span onclick="askPreset(0)">Who is most price-sensitive?</span>
+          <span onclick="askPreset(1)">Summarize the negative responses</span>
+          <span onclick="askPreset(2)">What's driving low purchase intent?</span>
+        </div>
+        <div class="qa-box">
+          <input id="qaInput" placeholder="e.g. What's the biggest objection to the price?">
+          <button onclick="askCustom()">Ask</button>
+        </div>
+        <div class="qa-thread" id="qaThread"></div>
+      </div>
+
+      <div class="panel verdict">
+        <h2>Verdict Report <span class="ai-badge">AI</span></h2>
+        <div class="pdesc">Goal-to-Insight: direct answer to the original business question.</div>
+        <div class="headline">62% would pay $15/month — price sensitivity is highest among under-35s.</div>
+        <div class="evidence">Based on 142 responses against a target sample of 120 (reached).</div>
+        <ul>
+          <li>68% of respondents aged 35+ rated purchase intent "likely" or "very likely," vs. 41% of under-35s.</li>
+          <li>Perceived value was the strongest driver of intent — respondents who rated value 4–5★ were 3x more likely to say yes.</li>
+          <li>Top objection in open text: "not sure I'd use it often enough" (mentioned in 22% of negative/neutral responses).</li>
+        </ul>
+        <div class="mock-note">Mocked verdict — built from a fixed sample dataset. Real version runs the same analysis live on real responses once LLM integration is turned on (Phase 4).</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Weekly distribution bars
+const weeklyResponses = [12, 28, 41, 35, 19, 7];
+const maxResp = Math.max(...weeklyResponses);
+document.getElementById('distChart').innerHTML = weeklyResponses.map((v,i)=>`
+  <div class="dist-bar-wrap">
+    <div class="dist-bar" style="height:${Math.round((v/maxResp)*100)}%;"></div>
+    <div class="dist-label">Wk ${i+1}</div>
+  </div>`).join('');
+
+// Question breakdown — colored per-option bars
+const qbreakdown = [
+  {
+    q: "Would you pay $15/month for this feature?",
+    opts: [
+      {name:"Definitely yes", pct:28, count:40, color:"var(--green)"},
+      {name:"Probably yes", pct:34, count:48, color:"#6FA37C"},
+      {name:"Not sure", pct:18, count:26, color:"#C9CDD3"},
+      {name:"Probably not", pct:13, count:18, color:"#D9A24B"},
+      {name:"Definitely not", pct:7, count:10, color:"var(--red)"},
+    ]
+  },
+  {
+    q: "How valuable would this feature be to your workflow?",
+    opts: [
+      {name:"Very valuable", pct:31, count:44, color:"var(--green)"},
+      {name:"Valuable", pct:39, count:55, color:"#6FA37C"},
+      {name:"Neutral", pct:16, count:23, color:"#C9CDD3"},
+      {name:"Not very valuable", pct:9, count:13, color:"#D9A24B"},
+      {name:"Not valuable", pct:5, count:7, color:"var(--red)"},
+    ]
+  }
+];
+document.getElementById('qbreakdown').innerHTML = qbreakdown.map(block => `
+  <div class="qb-block">
+    <div class="qb-title">${block.q}</div>
+    ${block.opts.map(o => `
+      <div class="qb-opt-row">
+        <div class="qb-opt-name">${o.name}</div>
+        <div class="qb-opt-track"><div class="qb-opt-fill" style="width:${o.pct}%;background:${o.color};"></div></div>
+        <div class="qb-opt-pct">${o.pct}% (${o.count})</div>
+      </div>`).join('')}
+  </div>`).join('');
+
+// Satisfaction trend line (SVG)
+const trendVals = [62, 66, 64, 70, 74, 78];
+(function(){
+  const w = 460, h = 110, pad = 16;
+  const max = 100, min = 0;
+  const stepX = (w - pad*2) / (trendVals.length - 1);
+  const pts = trendVals.map((v,i) => {
+    const x = pad + i*stepX;
+    const y = h - pad - ((v-min)/(max-min)) * (h - pad*2);
+    return [x,y];
+  });
+  const path = pts.map((p,i) => (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+  const months = ["Jan","Feb","Mar","Apr","May","Jun"];
+  const dots = pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="var(--ai)"/>`).join('');
+  const labels = pts.map((p,i)=>`<text x="${p[0]}" y="${h-2}" font-size="10" fill="#6B7280" text-anchor="middle">${months[i]}</text>`).join('');
+  document.getElementById('trendChart').innerHTML = `
+    <svg viewBox="0 0 ${w} ${h+14}" width="100%" height="130">
+      <path d="${path}" fill="none" stroke="var(--ai)" stroke-width="2.5"/>
+      ${dots}${labels}
+    </svg>`;
+})();
+
+const themes = [
+  {name:"Pricing concerns", count:38},
+  {name:"Usage frequency doubts", count:31},
+  {name:"Feature value/ROI", count:27},
+  {name:"Comparison to competitors", count:19},
+  {name:"Onboarding/ease of use", count:14},
+];
+document.getElementById('themes').innerHTML = themes.map(t=>{
+  const pct = Math.round((t.count / themes[0].count) * 100);
+  return `<div class="theme-row">
+    <div class="theme-name">${t.name}</div>
+    <div class="theme-bar-track"><div class="theme-bar-fill" style="width:${pct}%;"></div></div>
+    <div class="theme-count">${t.count}</div>
+  </div>`;
+}).join('');
+
+const segments = ["Under 25","25–34","35–44","45+"];
+const prices = ["$5","$10","$15","$20","$25"];
+const heat = [
+  [88,79,61,38,20],
+  [82,74,58,35,19],
+  [91,85,71,52,33],
+  [94,89,77,59,41],
+];
+function heatColor(v){
+  // green (high intent) -> amber -> red (low intent)
+  if(v>=80) return '#3F7D58';
+  if(v>=65) return '#6FA37C';
+  if(v>=50) return '#C9882E';
+  if(v>=35) return '#D9A24B';
+  return '#B23B3B';
+}
+let html = '<div class="heat-labels-row"><div></div>' + prices.map(p=>`<div style="text-align:center;">${p}</div>`).join('') + '</div>';
+segments.forEach((seg,i)=>{
+  html += `<div class="heat-row"><div class="rowlabel">${seg}</div>` +
+    heat[i].map(v=>`<div class="heat-cell" style="background:${heatColor(v)};">${v}%</div>`).join('') +
+    `</div>`;
+});
+document.getElementById('heatmap').innerHTML = html;
+
+const mockAnswers = {
+  0: "Respondents under 35 show the highest price sensitivity — purchase intent drops from 61% at $15 to 38% at $20 in that segment, compared to a much flatter curve for 45+.",
+  1: "Negative responses cluster around two themes: doubts about usage frequency (\"I might not use this enough to justify it\") and direct comparison to a cheaper competitor feature.",
+  2: "Low purchase intent correlates most strongly with low perceived value ratings (3★ or below) — respondents rarely cited price alone as the blocker; it's usually price relative to expected use.",
+};
+function addQA(q, a){
+  const thread = document.getElementById('qaThread');
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `<div class="qa-q">${q}</div>`;
+  thread.appendChild(wrap);
+  const loading = document.createElement('div');
+  loading.className = 'qa-a';
+  loading.innerHTML = '<span class="spinner"></span>Analyzing responses...';
+  thread.appendChild(loading);
+  setTimeout(()=>{
+    loading.innerHTML = a;
+  }, 1000);
+}
+function askPreset(i){
+  const qs = ["Who is most price-sensitive?","Summarize the negative responses","What's driving low purchase intent?"];
+  addQA(qs[i], mockAnswers[i]);
+}
+function askCustom(){
+  const input = document.getElementById('qaInput');
+  if(!input.value.trim()) return;
+  addQA(input.value.trim(), "Based on the dataset, the clearest pattern is around perceived value and usage frequency — respondents who rated the feature highly on both were 3x more likely to say they'd pay. (Mocked answer — real version queries live response data once AI integration is turned on.)");
+  input.value = '';
+}
+</script>
+</body>
+</html>

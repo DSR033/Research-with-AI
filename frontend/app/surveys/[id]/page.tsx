@@ -1,0 +1,692 @@
+'use client'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter, useParams } from 'next/navigation'
+import { getSurvey, updateSurvey, createQuestion, getResults } from '../../../lib/api'
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+interface Question {
+  id: string
+  type: string
+  title: string
+  required: boolean
+  position: number
+  options?: string[]
+  logicOn?: boolean
+}
+
+interface Survey {
+  id: string
+  title: string
+  status: string
+  mode: string
+  settings: Record<string, unknown>
+}
+
+const QUESTION_TYPES = [
+  { type: 'single_choice', label: '◉ Single choice' },
+  { type: 'multi_select', label: '☑ Multi-select' },
+  { type: 'rating', label: '★ Rating scale' },
+  { type: 'nps', label: '📊 NPS (0–10)' },
+  { type: 'short_text', label: '✎ Short text' },
+  { type: 'long_text', label: '📝 Long text' },
+  { type: 'yes_no', label: '⬤ Yes / No' },
+  { type: 'likert_matrix', label: '▦ Matrix / Likert' },
+  { type: 'ranking', label: '⇕ Ranking' },
+  { type: 'date_time', label: '📅 Date / time' },
+]
+
+const TYPE_LABEL: Record<string, string> = {
+  single_choice: 'Single Choice', multi_select: 'Multi-Select', rating: 'Rating Scale',
+  nps: 'NPS', short_text: 'Short Text', long_text: 'Long Text',
+  yes_no: 'Yes/No', likert_matrix: 'Matrix/Likert', ranking: 'Ranking', date_time: 'Date/Time',
+}
+
+export default function SurveyBuilder() {
+  const router = useRouter()
+  const params = useParams()
+  const id = params.id as string
+
+  const [survey, setSurvey] = useState<Survey | null>(null)
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [activeTab, setActiveTab] = useState('overview')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [published, setPublished] = useState(false)
+  const [results, setResults] = useState<{ total: number; complete: number; partial: number } | null>(null)
+
+  // Build tab state
+  const [buildMode, setBuildMode] = useState<'choose' | 'manual' | 'prompt' | 'g2i'>('choose')
+  const [aiPrompt, setAiPrompt] = useState('I want to know if customers would pay $15/month for a new feature')
+  const [g2iPrompt, setG2iPrompt] = useState('Will people pay $15/month for our new analytics feature?')
+  const [g2iResult, setG2iResult] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiToasts, setAiToasts] = useState<Record<string, string>>({})
+
+  // Config tab state
+  const [cfgRequire, setCfgRequire] = useState(false)
+  const [cfgNoDupes, setCfgNoDupes] = useState(true)
+  const [cfgRandomize, setCfgRandomize] = useState(false)
+  const [closeDate, setCloseDate] = useState('')
+  const [responseLimit, setResponseLimit] = useState('')
+
+  // Logic tab state
+  const [logicSubtab, setLogicSubtab] = useState('skip')
+
+  // Expert review
+  const [expertReview, setExpertReview] = useState<string | null>(null)
+  const [expertLoading, setExpertLoading] = useState(false)
+
+  useEffect(() => {
+    getSurvey(id).then(data => {
+      setSurvey(data)
+      setQuestions(
+        (data.questions || []).map((q: Question & { question_options?: Array<{label: string}> }) => ({
+          ...q,
+          options: q.question_options?.map((o: {label: string}) => o.label) ?? defaultOptions(q.type),
+          logicOn: false,
+        }))
+      )
+      setLoading(false)
+      if (data.status === 'active') setBuildMode('manual')
+    })
+    getResults(id).then(setResults)
+  }, [id])
+
+  function defaultOptions(type: string) {
+    return ['single_choice', 'multi_select', 'ranking'].includes(type) ? ['Option 1', 'Option 2'] : undefined
+  }
+
+  const saveDraft = useCallback(async () => {
+    if (!survey) return
+    setSaving(true)
+    await updateSurvey(id, { title: survey.title, status: survey.status })
+    setSaving(false)
+  }, [survey, id])
+
+  const handlePublish = async () => {
+    await updateSurvey(id, { status: 'active' })
+    setSurvey(prev => prev ? { ...prev, status: 'active' } : prev)
+    setPublished(true)
+  }
+
+  const addQuestion = async (type: string) => {
+    const payload = {
+      type,
+      title: `Untitled ${TYPE_LABEL[type] ?? type} question`,
+      required: false,
+      position: questions.length,
+    }
+    const q = await createQuestion(id, payload)
+    setQuestions(prev => [...prev, { ...q, options: defaultOptions(type), logicOn: false }])
+    if (buildMode === 'choose') setBuildMode('manual')
+    setActiveTab('build')
+  }
+
+  const removeQuestion = (qid: string) => setQuestions(prev => prev.filter(q => q.id !== qid))
+
+  const updateTitle = (qid: string, val: string) =>
+    setQuestions(prev => prev.map(q => q.id === qid ? { ...q, title: val } : q))
+
+  const toggleLogic = (qid: string) =>
+    setQuestions(prev => prev.map(q => q.id === qid ? { ...q, logicOn: !q.logicOn } : q))
+
+  const setToast = (qid: string, msg: string) => {
+    setAiToasts(prev => ({ ...prev, [qid]: msg }))
+    setTimeout(() => setAiToasts(prev => { const n = { ...prev }; delete n[qid]; return n }), 3000)
+  }
+
+  const aiAction = (qid: string, action: string) => {
+    setToast(qid, '⏳ Applying AI action…')
+    setTimeout(() => {
+      if (action === 'rephrase') {
+        setQuestions(prev => prev.map(q => q.id === qid ? { ...q, title: q.title.replace(/^Untitled/, 'Revised') } : q))
+        setToast(qid, '✨ Rephrased!')
+      } else if (action === 'concise') {
+        setToast(qid, '✨ Shortened wording (mocked) — real call wires in Phase 4.')
+      } else if (action === 'tone') {
+        setToast(qid, '✨ Tone set to "Friendly" (mocked).')
+      } else if (action === 'suggest') {
+        addQuestion('short_text')
+        setToast(qid, '✨ Follow-up question added!')
+      }
+    }, 700)
+  }
+
+  const generateFromPrompt = () => {
+    setAiLoading(true)
+    setTimeout(() => {
+      setSurvey(prev => prev ? { ...prev, title: 'Feature Pricing Survey (AI draft)' } : prev)
+      setQuestions([
+        { id: 'mock-1', type: 'nps', title: 'How likely are you to recommend our product?', required: false, position: 0 },
+        { id: 'mock-2', type: 'single_choice', title: 'Would you pay $15/month for this feature?', required: true, position: 1, options: ['Definitely yes', 'Probably yes', 'Not sure', 'Probably not', 'Definitely not'] },
+        { id: 'mock-3', type: 'rating', title: 'How valuable would this feature be to your workflow?', required: false, position: 2 },
+        { id: 'mock-4', type: 'long_text', title: 'What would make this feature more worth paying for?', required: false, position: 3 },
+      ])
+      setBuildMode('manual')
+      setAiLoading(false)
+    }, 1200)
+  }
+
+  const runG2I = () => {
+    setAiLoading(true)
+    setTimeout(() => {
+      setG2iResult(`<b>Recommended method:</b> Concept Test (purchase-intent focus)<br><br><b>Suggested sample size:</b> ~120 respondents<br><b>Suggested audience:</b> Existing customers active in last 30 days`)
+      setAiLoading(false)
+    }, 1300)
+  }
+
+  const buildFromG2I = () => {
+    setQuestions([
+      { id: 'mock-g1', type: 'single_choice', title: 'After seeing this feature, how likely are you to purchase it at $15/month?', required: false, position: 0, options: ['Very likely', 'Likely', 'Neutral', 'Unlikely', 'Very unlikely'] },
+      { id: 'mock-g2', type: 'rating', title: 'How would you rate the value of this feature?', required: false, position: 1 },
+      { id: 'mock-g3', type: 'long_text', title: 'What, if anything, would stop you from purchasing?', required: false, position: 2 },
+    ])
+    setBuildMode('manual')
+    setG2iResult(null)
+  }
+
+  const runExpertReview = () => {
+    setExpertLoading(true)
+    setTimeout(() => {
+      setExpertReview('amber:Q2 wording may lead respondents. Consider neutral phrasing.|amber:Survey length: ~3 min — within recommended range for 80%+ completion.|green:Question order looks good. Sensitive questions placed at end.')
+      setExpertLoading(false)
+    }, 1200)
+  }
+
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--grey)' }}>Loading…</div>
+  if (!survey) return <div style={{ padding: 40, color: 'var(--red)' }}>Survey not found.</div>
+
+  if (published) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+        <TopBar />
+        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '32px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
+          <h1 style={{ fontSize: 28, marginBottom: 8 }}>Survey Published!</h1>
+          <p style={{ color: 'var(--grey)', marginBottom: 24 }}>Your survey is live and ready to collect responses.</p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button className="btn secondary" onClick={() => { setPublished(false); setActiveTab('share') }}>View Share Options</button>
+            <button className="btn" onClick={() => router.push('/')}>Go to Dashboard</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const TABS = [
+    { id: 'overview', label: '📊 Overview' },
+    { id: 'build', label: '✎ Build' },
+    { id: 'logic', label: '🔀 Logic' },
+    { id: 'config', label: '⚙ Configuration' },
+    { id: 'share', label: '📤 Share' },
+    { id: 'insights', label: '📈 Insights' },
+    { id: 'expert', label: '✨ Expert Review' },
+  ]
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      <TopBar />
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '32px 24px' }}>
+
+        {/* Breadcrumb */}
+        <div onClick={() => router.push('/')} style={{ fontSize: 13, color: 'var(--grey)', marginBottom: 10, cursor: 'pointer' }}>
+          ← Back to Overview
+        </div>
+
+        {/* Builder Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          <div>
+            <h1
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={e => setSurvey(prev => prev ? { ...prev, title: e.target.innerText } : prev)}
+              style={{ fontSize: 22, margin: '0 0 4px', outline: 'none', cursor: 'text' }}
+            >
+              {survey.title}
+            </h1>
+            <div style={{ color: 'var(--grey)', fontSize: 12 }}>
+              Survey ID: SRV-{id.slice(0, 8).toUpperCase()} · {survey.status === 'active' ? 'Live' : 'Draft'} · {survey.mode}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn ghost" onClick={saveDraft} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>
+            <button className="btn" onClick={handlePublish} disabled={survey.status === 'active'}>
+              {survey.status === 'active' ? '✓ Published' : 'Publish Survey'}
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', margin: '18px 0 22px', flexWrap: 'wrap' }}>
+          {TABS.map(t => (
+            <div
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                fontSize: 13.5, fontWeight: 600, padding: '10px 14px', cursor: 'pointer',
+                color: activeTab === t.id ? 'var(--accent)' : 'var(--grey)',
+                borderBottom: `2px solid ${activeTab === t.id ? 'var(--accent)' : 'transparent'}`,
+              }}
+            >
+              {t.label}
+            </div>
+          ))}
+        </div>
+
+        {/* ── OVERVIEW TAB ── */}
+        {activeTab === 'overview' && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
+            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Overview Analytics</h2>
+            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>Live response stats for this survey.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
+              <StatTile color="blue" num={String(results?.total ?? 0)} label="Total Responses" />
+              <StatTile color="green" num={results?.total ? `${Math.round((results.complete / results.total) * 100)}%` : '0%'} label="Completion Rate" />
+              <StatTile color="purple" num="--" label="Avg. Time" />
+            </div>
+            <div style={{ marginTop: 20, display: 'flex', gap: 10 }}>
+              <button className="btn secondary" onClick={() => setActiveTab('build')}>Go to Build</button>
+              <button className="btn secondary" onClick={() => setActiveTab('insights')}>View Insights</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── BUILD TAB ── */}
+        {activeTab === 'build' && (
+          <div>
+            {/* Mode chooser */}
+            {buildMode === 'choose' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+                {[
+                  { mode: 'manual' as const, name: 'Build it myself', desc: 'Drag-and-drop builder, full control over every question.', ai: false },
+                  { mode: 'prompt' as const, name: 'Describe it, AI drafts it', desc: 'One prompt → a full editable draft survey.', ai: true },
+                  { mode: 'g2i' as const, name: "I don't know where to start", desc: 'Tell AI your business question — it recommends a method and builds the survey.', ai: true },
+                ].map(m => (
+                  <div
+                    key={m.mode}
+                    onClick={() => setBuildMode(m.mode)}
+                    style={{
+                      border: `1.5px solid ${m.ai ? 'var(--ai-border)' : 'var(--border)'}`,
+                      borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {m.name}
+                      {m.ai && <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, color: 'var(--ai)', background: 'var(--ai-bg)', padding: '2px 7px', borderRadius: 5, marginLeft: 8 }}>AI</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--grey)', marginTop: 3 }}>{m.desc}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* AI Prompt box */}
+            {buildMode === 'prompt' && (
+              <div style={{ background: 'var(--ai-bg)', border: '1px solid var(--ai-border)', borderRadius: 10, padding: 18, marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ai)', textTransform: 'uppercase', marginBottom: 8 }}>⚡ AI Prompt-to-Survey</div>
+                <textarea
+                  value={aiPrompt}
+                  onChange={e => setAiPrompt(e.target.value)}
+                  style={{ width: '100%', border: '1px solid var(--ai-border)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', minHeight: 60 }}
+                />
+                <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <button className="btn purple" onClick={generateFromPrompt} disabled={aiLoading}>
+                    {aiLoading ? <><span className="spinner" />Generating…</> : 'Generate Draft'}
+                  </button>
+                  <button className="btn ghost" onClick={() => setBuildMode('choose')}>Back</button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '6px 10px', marginTop: 10 }}>
+                  Mocked response — real AI generation wires in during Phase 4.
+                </div>
+              </div>
+            )}
+
+            {/* Goal-to-Insight box */}
+            {buildMode === 'g2i' && (
+              <div style={{ background: 'var(--ai-bg)', border: '1px solid var(--ai-border)', borderRadius: 10, padding: 18, marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ai)', textTransform: 'uppercase', marginBottom: 8 }}>🎯 Goal-to-Insight Intake</div>
+                <textarea
+                  value={g2iPrompt}
+                  onChange={e => setG2iPrompt(e.target.value)}
+                  style={{ width: '100%', border: '1px solid var(--ai-border)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', minHeight: 60 }}
+                />
+                <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <button className="btn purple" onClick={runG2I} disabled={aiLoading}>
+                    {aiLoading ? <><span className="spinner" />Thinking…</> : 'Get AI Recommendation'}
+                  </button>
+                  <button className="btn ghost" onClick={() => setBuildMode('choose')}>Back</button>
+                </div>
+                {g2iResult && (
+                  <div style={{ background: 'white', border: '1px solid var(--ai-border)', borderRadius: 8, padding: 14, marginTop: 12, fontSize: 13 }}>
+                    <div dangerouslySetInnerHTML={{ __html: g2iResult }} />
+                    <button className="btn purple" style={{ marginTop: 12 }} onClick={buildFromG2I}>Build this survey</button>
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '6px 10px', marginTop: 10 }}>
+                  Mocked response — real AI generation wires in during Phase 4.
+                </div>
+              </div>
+            )}
+
+            {/* Builder layout */}
+            <div style={{ display: 'flex', gap: 18 }}>
+              {/* Question type panel */}
+              <div style={{ width: 190, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, height: 'fit-content', flexShrink: 0 }}>
+                <h3 style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--grey)', margin: '0 0 10px' }}>Add Question</h3>
+                {QUESTION_TYPES.map(qt => (
+                  <div
+                    key={qt.type}
+                    onClick={() => addQuestion(qt.type)}
+                    style={{ fontSize: 13, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', marginBottom: 4 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {qt.label}
+                  </div>
+                ))}
+              </div>
+
+              {/* Question canvas */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+                {questions.length === 0 ? (
+                  <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 40, textAlign: 'center', color: 'var(--grey)', fontSize: 13 }}>
+                    No questions yet — add one from the left, or use AI generation above.
+                  </div>
+                ) : questions.map((q, i) => (
+                  <div key={q.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <input
+                        value={q.title}
+                        onChange={e => updateTitle(q.id, e.target.value)}
+                        style={{ border: 'none', fontSize: 15, fontWeight: 600, width: '100%', outline: 'none', background: 'transparent', fontFamily: 'inherit' }}
+                        placeholder={`Q${i + 1} — enter question text`}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--accent)', background: '#EEF2FF', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', marginLeft: 10 }}>
+                        {TYPE_LABEL[q.type] ?? q.type}
+                      </span>
+                    </div>
+
+                    {q.options && q.options.map((opt, oi) => (
+                      <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, color: 'var(--grey)' }}>
+                        ○ <input
+                          type="text"
+                          defaultValue={opt}
+                          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 13, flex: 1, fontFamily: 'inherit' }}
+                        />
+                      </div>
+                    ))}
+
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+                      {[['suggest', '✨ Suggest Questions'], ['rephrase', '✨ Rephrase'], ['concise', '✨ Make Concise'], ['tone', '✨ Change Tone']].map(([action, label]) => (
+                        <span
+                          key={action}
+                          onClick={() => aiAction(q.id, action)}
+                          style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ai)', background: 'var(--ai-bg)', border: '1px solid var(--ai-border)', padding: '5px 10px', borderRadius: 7, cursor: 'pointer' }}
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+
+                    {aiToasts[q.id] && (
+                      <div style={{ fontSize: 11.5, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '5px 9px', marginTop: 8 }}>
+                        {aiToasts[q.id]}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                      <span
+                        onClick={() => toggleLogic(q.id)}
+                        style={{ fontSize: 12, color: 'var(--grey)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        {q.logicOn ? '🔀 Skip logic: ON (go to Q+2 if "No")' : '+ Add skip logic'}
+                      </span>
+                      <span onClick={() => removeQuestion(q.id)} style={{ fontSize: 12, color: 'var(--red)', cursor: 'pointer' }}>Remove</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── LOGIC TAB ── */}
+        {activeTab === 'logic' && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
+            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Logic & Flow Control</h2>
+            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>Set up conditional logic and branching based on responses.</div>
+
+            <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--border)' }}>
+              {['skip', 'compound', 'showq', 'showo'].map(sub => (
+                <div
+                  key={sub}
+                  onClick={() => setLogicSubtab(sub)}
+                  style={{ fontSize: 13, fontWeight: 600, padding: '8px 4px', marginRight: 22, cursor: 'pointer', color: logicSubtab === sub ? 'var(--accent)' : 'var(--grey)', borderBottom: `2px solid ${logicSubtab === sub ? 'var(--accent)' : 'transparent'}` }}
+                >
+                  {sub === 'skip' ? 'Skip Logic' : sub === 'compound' ? 'Compound Logic' : sub === 'showq' ? 'Show/Hide Questions' : 'Show/Hide Options'}
+                </div>
+              ))}
+            </div>
+
+            {logicSubtab === 'skip' && (
+              <div>
+                <div style={{ color: 'var(--grey)', fontSize: 13, marginBottom: 12 }}>Simple per-question skip rules, set from each question in the Build tab.</div>
+                {questions.filter(q => q.logicOn).length === 0 ? (
+                  <div style={{ color: 'var(--grey)', fontSize: 13, padding: '16px 0' }}>No skip logic rules set yet. Enable them per-question in the Build tab.</div>
+                ) : questions.filter(q => q.logicOn).map(q => (
+                  <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 10 }}>🔀 {q.title.slice(0, 40)} → if &quot;No&quot;, skip to next</div>
+                    <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+                      If <strong style={{ color: 'var(--accent-dark)' }}>{q.title.slice(0, 30)}…</strong> equals <strong style={{ color: 'var(--accent-dark)' }}>&quot;No&quot;</strong> → jump to next question
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {logicSubtab === 'compound' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ color: 'var(--grey)', fontSize: 13 }}>Create complex conditions using multiple filters and named variables.</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn ghost">⚛ Create Variable</button>
+                    <button className="btn purple">+ Add Compound Logic</button>
+                  </div>
+                </div>
+                <div style={{ background: '#EEF2FF', border: '1px solid #D7E0FF', borderRadius: 10, padding: '14px 16px', marginBottom: 18 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--accent-dark)', marginBottom: 8 }}>⚛ Available Variables</div>
+                  {['$user_segment', '$satisfaction_score', '$product_usage'].map(v => (
+                    <span key={v} style={{ display: 'inline-block', fontSize: 12, fontFamily: 'monospace', background: 'white', border: '1px solid #C7D3FF', color: 'var(--accent-dark)', padding: '4px 10px', borderRadius: 20, margin: '0 6px 6px 0' }}>{v}</span>
+                  ))}
+                </div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 10 }}>🔻 Rule #1: Premium User Pathway</div>
+                  <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--grey)', fontSize: 11.5, textTransform: 'uppercase', marginBottom: 4 }}>Conditions (ALL must be true)</div>
+                    <div style={{ padding: '5px 0' }}>▽ <strong style={{ color: 'var(--accent-dark)' }}>Subscription Type</strong> equals <strong style={{ color: 'var(--accent-dark)' }}>&quot;Premium&quot;</strong></div>
+                    <div style={{ padding: '5px 0' }}>▽ Variable: <strong style={{ color: 'var(--accent-dark)' }}>$satisfaction_score</strong> greater than <strong style={{ color: 'var(--accent-dark)' }}>8</strong></div>
+                  </div>
+                  <div style={{ background: '#F1E9F7', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginTop: 8, color: '#5A3A78', fontWeight: 600 }}>
+                    THEN → Route to &quot;Power User&quot; follow-up branch
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(logicSubtab === 'showq' || logicSubtab === 'showo') && (
+              <div style={{ color: 'var(--grey)', fontSize: 13 }}>
+                {logicSubtab === 'showq'
+                  ? 'Show or hide entire questions based on prior answers — configure per question from the Build tab.'
+                  : 'Show or hide individual answer options dynamically based on earlier responses or variables.'}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── CONFIGURATION TAB ── */}
+        {activeTab === 'config' && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
+            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Survey Configuration</h2>
+            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>Configure quality settings, response validation, and survey controls.</div>
+
+            <div style={{ marginBottom: 24 }}>
+              <h3 style={{ fontSize: 13, textTransform: 'uppercase', color: 'var(--grey)', margin: '0 0 12px' }}>Quality Settings</h3>
+              {[
+                { label: 'Require Response', desc: 'Make all questions mandatory', val: cfgRequire, set: setCfgRequire },
+                { label: 'Prevent Multiple Submissions', desc: 'One response per user', val: cfgNoDupes, set: setCfgNoDupes },
+                { label: 'Randomize Questions', desc: 'Show questions in random order', val: cfgRandomize, set: setCfgRandomize },
+              ].map(row => (
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13.5 }}>{row.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--grey)', marginTop: 2 }}>{row.desc}</div>
+                  </div>
+                  <div
+                    onClick={() => row.set(!row.val)}
+                    style={{ position: 'relative', width: 42, height: 24, borderRadius: 14, background: row.val ? 'var(--accent)' : 'var(--border)', cursor: 'pointer', transition: '.15s', flexShrink: 0 }}
+                  >
+                    <div style={{ position: 'absolute', top: 3, left: row.val ? 21 : 3, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: '.15s' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <h3 style={{ fontSize: 13, textTransform: 'uppercase', color: 'var(--grey)', margin: '0 0 12px' }}>Survey Controls</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Close Date</label>
+                  <input type="date" value={closeDate} onChange={e => setCloseDate(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', fontSize: 13, fontFamily: 'inherit' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Response Limit</label>
+                  <input type="number" placeholder="e.g. 1000" value={responseLimit} onChange={e => setResponseLimit(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', fontSize: 13, fontFamily: 'inherit' }} />
+                </div>
+              </div>
+              <div style={{ marginTop: 18 }}>
+                <button className="btn" onClick={async () => {
+                  await updateSurvey(id, {
+                    settings: { require_response: cfgRequire, no_duplicates: cfgNoDupes, randomize: cfgRandomize },
+                    close_date: closeDate || null,
+                    response_limit: responseLimit ? parseInt(responseLimit) : null,
+                  })
+                  alert('Configuration saved.')
+                }}>Save Configuration</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── SHARE TAB ── */}
+        {activeTab === 'share' && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
+            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Share & Distribute</h2>
+            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>
+              {survey.status === 'active' ? 'Your survey is live and ready to collect responses.' : 'Publish your survey first to enable distribution.'}
+            </div>
+            {[
+              { title: 'Shareable link', meta: `surveyai.app/s/${id.slice(0, 8)}`, action: 'Copy Link', onClick: () => { navigator.clipboard.writeText(`https://surveyai.app/s/${id.slice(0, 8)}`); alert('Link copied!') } },
+              { title: 'Embed on your site', meta: `<iframe src="surveyai.app/embed/${id.slice(0, 8)}">`, action: 'Copy Code', onClick: () => { navigator.clipboard.writeText(`<iframe src="https://surveyai.app/embed/${id.slice(0, 8)}" width="100%" height="600"></iframe>`); alert('Embed code copied!') } },
+              { title: 'Email invite', meta: 'Send to a list via your provider', action: 'Send Invite', onClick: () => alert('Email invite flow — coming in Phase 3.') },
+            ].map(row => (
+              <div key={row.title} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{row.title}</div>
+                  <div style={{ color: 'var(--grey)', fontSize: 12, marginTop: 2, fontFamily: 'monospace' }}>{row.meta}</div>
+                </div>
+                <button className="btn secondary" onClick={row.onClick} disabled={survey.status !== 'active'}>{row.action}</button>
+              </div>
+            ))}
+            {survey.status !== 'active' && (
+              <button className="btn" onClick={handlePublish} style={{ marginTop: 8 }}>Publish Survey to Enable Sharing</button>
+            )}
+          </div>
+        )}
+
+        {/* ── INSIGHTS TAB ── */}
+        {activeTab === 'insights' && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
+            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>
+              Insights <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, color: 'var(--ai)', background: 'var(--ai-bg)', padding: '2px 8px', borderRadius: 6, marginLeft: 8, verticalAlign: 'middle' }}>AI</span>
+            </h2>
+            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>Live response analytics and AI-generated insights.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 20 }}>
+              <StatTile color="blue" num={String(results?.total ?? 0)} label="Total Responses" />
+              <StatTile color="green" num={results?.total ? `${Math.round((results.complete / results.total) * 100)}%` : '0%'} label="Completion Rate" />
+              <StatTile color="purple" num={String(results?.partial ?? 0)} label="Partial Responses" />
+            </div>
+            <div style={{ marginTop: 8, display: 'flex', gap: 10 }}>
+              <button className="btn" onClick={() => router.push(`/surveys/${id}/analysis`)}>
+                Open AI Analysis Dashboard →
+              </button>
+              <button className="btn secondary" onClick={() => router.push(`/surveys/${id}/respond`)}>
+                Preview as Respondent
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── EXPERT REVIEW TAB ── */}
+        {activeTab === 'expert' && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
+            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>
+              Expert Review <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, color: 'var(--ai)', background: 'var(--ai-bg)', padding: '2px 8px', borderRadius: 6, marginLeft: 8, verticalAlign: 'middle' }}>AI</span>
+            </h2>
+            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>AI scans your survey for bias, length, clarity, and structure issues before you publish.</div>
+            <button className="btn purple" onClick={runExpertReview} disabled={expertLoading}>
+              {expertLoading ? <><span className="spinner" />Reviewing survey…</> : '✨ Run Expert Review'}
+            </button>
+            {expertReview && (
+              <div style={{ marginTop: 16 }}>
+                {expertReview.split('|').map((item, i) => {
+                  const [color, ...msgParts] = item.split(':')
+                  return (
+                    <div key={i} style={{ display: 'flex', gap: 10, padding: '12px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color === 'amber' ? 'var(--amber)' : 'var(--green)', marginTop: 5, flexShrink: 0, display: 'block' }} />
+                      <span dangerouslySetInnerHTML={{ __html: msgParts.join(':').replace(/^([^.]+\.)/, '<strong>$1</strong>') }} />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '6px 10px', marginTop: 16 }}>
+              Mocked review — real AI analysis wires in during Phase 4.
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
+}
+
+function TopBar() {
+  const router = useRouter()
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px' }}>
+      <div onClick={() => router.push('/')} style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent)', cursor: 'pointer' }}>SurveyAI</div>
+      <div style={{ display: 'flex', gap: 24, fontSize: 14, color: 'var(--grey)' }}>
+        <span style={{ cursor: 'pointer' }} onClick={() => router.push('/')}>Surveys</span>
+        <span style={{ cursor: 'pointer' }}>Templates</span>
+        <span style={{ cursor: 'pointer' }}>Team</span>
+        <span style={{ cursor: 'pointer' }}>Billing</span>
+      </div>
+      <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>D</div>
+    </div>
+  )
+}
+
+function StatTile({ color, num, label }: { color: 'blue' | 'green' | 'purple'; num: string; label: string }) {
+  const colors = {
+    blue: { bg: '#EEF2FF', num: 'var(--accent-dark)', label: 'var(--accent-dark)' },
+    green: { bg: 'var(--green-bg)', num: 'var(--green)', label: 'var(--green)' },
+    purple: { bg: 'var(--ai-bg)', num: 'var(--ai)', label: 'var(--ai)' },
+  }
+  const c = colors[color]
+  return (
+    <div style={{ background: c.bg, borderRadius: 10, padding: 18 }}>
+      <div style={{ fontSize: 26, fontWeight: 700, color: c.num }}>{num}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 4, color: c.label }}>{label}</div>
+    </div>
+  )
+}
