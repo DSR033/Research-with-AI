@@ -57,12 +57,6 @@ export default function SurveyBuilder() {
   const [results, setResults] = useState<{ total: number; complete: number; partial: number } | null>(null)
 
   // Build tab state
-  const [buildMode, setBuildMode] = useState<'choose' | 'manual' | 'prompt' | 'g2i'>('choose')
-  const [aiPrompt, setAiPrompt] = useState('I want to know if customers would pay $15/month for a new feature')
-  const [g2iPrompt, setG2iPrompt] = useState('Will people pay $15/month for our new analytics feature?')
-  const [g2iResult, setG2iResult] = useState<string | null>(null)
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiToasts, setAiToasts] = useState<Record<string, string>>({})
 
   // Config tab state
   const [cfgRequire, setCfgRequire] = useState(false)
@@ -73,10 +67,6 @@ export default function SurveyBuilder() {
 
   // Logic tab state
   const [logicSubtab, setLogicSubtab] = useState('skip')
-
-  // Expert review
-  const [expertReview, setExpertReview] = useState<string | null>(null)
-  const [expertLoading, setExpertLoading] = useState(false)
 
   useEffect(() => {
     getSurvey(id).then(data => {
@@ -89,7 +79,6 @@ export default function SurveyBuilder() {
         }))
       )
       setLoading(false)
-      if (data.status === 'active') setBuildMode('manual')
     })
     getResults(id).then(setResults)
   }, [id])
@@ -120,7 +109,6 @@ export default function SurveyBuilder() {
     }
     const q = await createQuestion(id, payload)
     setQuestions(prev => [...prev, { ...q, options: defaultOptions(type), logicOn: false }])
-    if (buildMode === 'choose') setBuildMode('manual')
     setActiveTab('build')
   }
 
@@ -132,101 +120,6 @@ export default function SurveyBuilder() {
   const toggleLogic = (qid: string) =>
     setQuestions(prev => prev.map(q => q.id === qid ? { ...q, logicOn: !q.logicOn } : q))
 
-  const setToast = (qid: string, msg: string) => {
-    setAiToasts(prev => ({ ...prev, [qid]: msg }))
-    setTimeout(() => setAiToasts(prev => { const n = { ...prev }; delete n[qid]; return n }), 3000)
-  }
-
-  const aiAction = (qid: string, action: string) => {
-    setToast(qid, '⏳ Applying AI action…')
-    setTimeout(() => {
-      if (action === 'rephrase') {
-        setQuestions(prev => prev.map(q => q.id === qid ? { ...q, title: q.title.replace(/^Untitled/, 'Revised') } : q))
-        setToast(qid, '✨ Rephrased!')
-      } else if (action === 'concise') {
-        setToast(qid, '✨ Shortened wording (mocked) — real call wires in Phase 4.')
-      } else if (action === 'tone') {
-        setToast(qid, '✨ Tone set to "Friendly" (mocked).')
-      } else if (action === 'suggest') {
-        addQuestion('short_text')
-        setToast(qid, '✨ Follow-up question added!')
-      }
-    }, 700)
-  }
-
-  const generateFromPrompt = async () => {
-    setAiLoading(true)
-    try {
-      const res = await fetch(`${API}/surveys/${id}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: aiPrompt }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      setSurvey(prev => prev ? { ...prev, title: data.title } : prev)
-      // Reload questions from server (options are created server-side)
-      const qRes = await fetch(`${API}/surveys/${id}/questions`)
-      const qs = await qRes.json()
-      setQuestions(qs.map((q: Question & { question_options?: Array<{label: string}> }) => ({
-        ...q,
-        options: q.question_options?.map((o: {label: string}) => o.label),
-        logicOn: false,
-      })))
-      setBuildMode('manual')
-    } catch (e) {
-      alert('Generation failed. Check your ANTHROPIC_API_KEY in backend/.env')
-      console.error(e)
-    }
-    setAiLoading(false)
-  }
-
-  const runG2I = async () => {
-    setAiLoading(true)
-    try {
-      const res = await fetch(`${API}/surveys/${id}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: g2iPrompt }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      setG2iResult(`<b>AI has generated a survey based on your goal.</b><br><br><b>Title:</b> ${data.title}<br><b>Questions created:</b> ${data.questions?.length ?? 0}`)
-      const qRes = await fetch(`${API}/surveys/${id}/questions`)
-      const qs = await qRes.json()
-      setQuestions(qs.map((q: Question & { question_options?: Array<{label: string}> }) => ({
-        ...q, options: q.question_options?.map((o: {label: string}) => o.label), logicOn: false,
-      })))
-    } catch (e) {
-      setG2iResult('<b>Generation failed.</b> Check your ANTHROPIC_API_KEY in backend/.env')
-    }
-    setAiLoading(false)
-  }
-
-  const buildFromG2I = () => {
-    setBuildMode('manual')
-    setG2iResult(null)
-  }
-
-  const runExpertReview = async () => {
-    setExpertLoading(true)
-    try {
-      const res = await fetch(`${API}/surveys/${id}/expert-review`, { method: 'POST' })
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      // Convert to pipe-separated format used by the renderer
-      const formatted = data.findings
-        .map((f: { severity: string; text: string }) => {
-          const color = f.severity === 'pass' ? 'green' : f.severity === 'warning' ? 'amber' : 'amber'
-          return `${color}:${f.text}`
-        })
-        .join('|')
-      setExpertReview(formatted + (data.summary ? `|green:Overall: ${data.summary} (Score: ${data.overall_score}/10)` : ''))
-    } catch (e) {
-      setExpertReview('amber:Review failed. Check your ANTHROPIC_API_KEY in backend/.env')
-    }
-    setExpertLoading(false)
-  }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--grey)' }}>Loading…</div>
   if (!survey) return <div style={{ padding: 40, color: 'var(--red)' }}>Survey not found.</div>
@@ -255,7 +148,6 @@ export default function SurveyBuilder() {
     { id: 'config', label: '⚙ Configuration' },
     { id: 'share', label: '📤 Share' },
     { id: 'insights', label: '📈 Insights' },
-    { id: 'expert', label: '✨ Expert Review' },
   ]
 
   return (
@@ -328,80 +220,6 @@ export default function SurveyBuilder() {
         {/* ── BUILD TAB ── */}
         {activeTab === 'build' && (
           <div>
-            {/* Mode chooser */}
-            {buildMode === 'choose' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
-                {[
-                  { mode: 'manual' as const, name: 'Build it myself', desc: 'Drag-and-drop builder, full control over every question.', ai: false },
-                  { mode: 'prompt' as const, name: 'Describe it, AI drafts it', desc: 'One prompt → a full editable draft survey.', ai: true },
-                  { mode: 'g2i' as const, name: "I don't know where to start", desc: 'Tell AI your business question — it recommends a method and builds the survey.', ai: true },
-                ].map(m => (
-                  <div
-                    key={m.mode}
-                    onClick={() => setBuildMode(m.mode)}
-                    style={{
-                      border: `1.5px solid ${m.ai ? 'var(--ai-border)' : 'var(--border)'}`,
-                      borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {m.name}
-                      {m.ai && <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, color: 'var(--ai)', background: 'var(--ai-bg)', padding: '2px 7px', borderRadius: 5, marginLeft: 8 }}>AI</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--grey)', marginTop: 3 }}>{m.desc}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* AI Prompt box */}
-            {buildMode === 'prompt' && (
-              <div style={{ background: 'var(--ai-bg)', border: '1px solid var(--ai-border)', borderRadius: 10, padding: 18, marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ai)', textTransform: 'uppercase', marginBottom: 8 }}>⚡ AI Prompt-to-Survey</div>
-                <textarea
-                  value={aiPrompt}
-                  onChange={e => setAiPrompt(e.target.value)}
-                  style={{ width: '100%', border: '1px solid var(--ai-border)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', minHeight: 60 }}
-                />
-                <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <button className="btn purple" onClick={generateFromPrompt} disabled={aiLoading}>
-                    {aiLoading ? <><span className="spinner" />Generating…</> : 'Generate Draft'}
-                  </button>
-                  <button className="btn ghost" onClick={() => setBuildMode('choose')}>Back</button>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '6px 10px', marginTop: 10 }}>
-                  Mocked response — real AI generation wires in during Phase 4.
-                </div>
-              </div>
-            )}
-
-            {/* Goal-to-Insight box */}
-            {buildMode === 'g2i' && (
-              <div style={{ background: 'var(--ai-bg)', border: '1px solid var(--ai-border)', borderRadius: 10, padding: 18, marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ai)', textTransform: 'uppercase', marginBottom: 8 }}>🎯 Goal-to-Insight Intake</div>
-                <textarea
-                  value={g2iPrompt}
-                  onChange={e => setG2iPrompt(e.target.value)}
-                  style={{ width: '100%', border: '1px solid var(--ai-border)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', minHeight: 60 }}
-                />
-                <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <button className="btn purple" onClick={runG2I} disabled={aiLoading}>
-                    {aiLoading ? <><span className="spinner" />Thinking…</> : 'Get AI Recommendation'}
-                  </button>
-                  <button className="btn ghost" onClick={() => setBuildMode('choose')}>Back</button>
-                </div>
-                {g2iResult && (
-                  <div style={{ background: 'white', border: '1px solid var(--ai-border)', borderRadius: 8, padding: 14, marginTop: 12, fontSize: 13 }}>
-                    <div dangerouslySetInnerHTML={{ __html: g2iResult }} />
-                    <button className="btn purple" style={{ marginTop: 12 }} onClick={buildFromG2I}>Build this survey</button>
-                  </div>
-                )}
-                <div style={{ fontSize: 11, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '6px 10px', marginTop: 10 }}>
-                  Mocked response — real AI generation wires in during Phase 4.
-                </div>
-              </div>
-            )}
-
             {/* Builder layout */}
             <div style={{ display: 'flex', gap: 18 }}>
               {/* Question type panel */}
@@ -449,24 +267,6 @@ export default function SurveyBuilder() {
                         />
                       </div>
                     ))}
-
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-                      {[['suggest', '✨ Suggest Questions'], ['rephrase', '✨ Rephrase'], ['concise', '✨ Make Concise'], ['tone', '✨ Change Tone']].map(([action, label]) => (
-                        <span
-                          key={action}
-                          onClick={() => aiAction(q.id, action)}
-                          style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ai)', background: 'var(--ai-bg)', border: '1px solid var(--ai-border)', padding: '5px 10px', borderRadius: 7, cursor: 'pointer' }}
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-
-                    {aiToasts[q.id] && (
-                      <div style={{ fontSize: 11.5, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '5px 9px', marginTop: 8 }}>
-                        {aiToasts[q.id]}
-                      </div>
-                    )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                       <span
@@ -660,34 +460,6 @@ export default function SurveyBuilder() {
           </div>
         )}
 
-        {/* ── EXPERT REVIEW TAB ── */}
-        {activeTab === 'expert' && (
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
-            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>
-              Expert Review <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, color: 'var(--ai)', background: 'var(--ai-bg)', padding: '2px 8px', borderRadius: 6, marginLeft: 8, verticalAlign: 'middle' }}>AI</span>
-            </h2>
-            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>AI scans your survey for bias, length, clarity, and structure issues before you publish.</div>
-            <button className="btn purple" onClick={runExpertReview} disabled={expertLoading}>
-              {expertLoading ? <><span className="spinner" />Reviewing survey…</> : '✨ Run Expert Review'}
-            </button>
-            {expertReview && (
-              <div style={{ marginTop: 16 }}>
-                {expertReview.split('|').map((item, i) => {
-                  const [color, ...msgParts] = item.split(':')
-                  return (
-                    <div key={i} style={{ display: 'flex', gap: 10, padding: '12px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color === 'amber' ? 'var(--amber)' : 'var(--green)', marginTop: 5, flexShrink: 0, display: 'block' }} />
-                      <span dangerouslySetInnerHTML={{ __html: msgParts.join(':').replace(/^([^.]+\.)/, '<strong>$1</strong>') }} />
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            <div style={{ fontSize: 11, color: 'var(--ai)', background: 'white', border: '1px dashed var(--ai-border)', borderRadius: 6, padding: '6px 10px', marginTop: 16 }}>
-              Mocked review — real AI analysis wires in during Phase 4.
-            </div>
-          </div>
-        )}
 
       </div>
     </div>

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import TopBar from '../../../../components/TopBar'
 
@@ -49,12 +49,6 @@ const HEAT_DATA = [
   [91, 85, 71, 52, 33],
   [94, 89, 77, 59, 41],
 ]
-const PRESET_QA: Record<number, { q: string; a: string }> = {
-  0: { q: 'Who is most price-sensitive?', a: 'Respondents under 35 show the highest price sensitivity — purchase intent drops from 61% at $15 to 38% at $20, vs. a much flatter curve for 45+.' },
-  1: { q: 'Summarize the negative responses', a: 'Negative responses cluster around two themes: doubts about usage frequency ("I might not use this often enough") and comparison to a cheaper competitor feature.' },
-  2: { q: "What's driving low purchase intent?", a: 'Low intent correlates most strongly with low perceived-value ratings (3★ or below). Respondents rarely cite price alone — it\'s price relative to expected use.' },
-}
-
 function heatColor(v: number) {
   if (v >= 80) return '#3F7D58'
   if (v >= 65) return '#6FA37C'
@@ -165,10 +159,8 @@ export default function AnalysisDashboard() {
           ))}
         </div>
 
-        {/* Two-column layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 20 }}>
-
-          {/* ── LEFT COLUMN ── */}
+        {/* Dashboard panels */}
+        <div style={{ maxWidth: 720 }}>
           <div>
             {/* Distribution over time */}
             <Panel title="Response Distribution Over Time" desc="Weekly response volume since launch.">
@@ -260,119 +252,9 @@ export default function AnalysisDashboard() {
             </Panel>
           </div>
 
-          {/* ── RIGHT COLUMN ── */}
-          <div>
-            {/* Ask your data */}
-            <Panel title="Ask Your Data" desc="Plain-English questions over this survey's results." badge>
-              <AskYourData />
-            </Panel>
-
-            {/* Verdict report */}
-            <VerdictReport total={total} />
-          </div>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Ask Your Data ─────────────────────────────────────────────────────────────
-function AskYourData() {
-  const params = useParams()
-  const surveyId = params.id as string
-  const [thread, setThread] = useState<Array<{ q: string; a: string | null }>>([])
-  const [inputVal, setInputVal] = useState('')
-  const bottomRef = useRef<HTMLDivElement>(null)
-
-  const ask = async (question: string) => {
-    if (!question.trim()) return
-    setThread(prev => [...prev, { q: question, a: null }])
-    setInputVal('')
-    try {
-      const res = await fetch(`${API}/surveys/${surveyId}/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
-      })
-      const data = res.ok ? await res.json() : null
-      const answer = data?.answer ?? 'Unable to answer — check your ANTHROPIC_API_KEY.'
-      setThread(prev => prev.map(e => e.q === question && e.a === null ? { ...e, a: answer } : e))
-    } catch {
-      setThread(prev => prev.map(e => e.q === question && e.a === null ? { ...e, a: 'Request failed — is the backend running?' } : e))
-    }
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  const askPreset = (i: number) => {
-    const p = PRESET_QA[i]
-    ask(p.q)
-  }
-
-  return (
-    <div>
-      {/* Preset chips */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        {Object.values(PRESET_QA).map((p, i) => (
-          <span key={i} onClick={() => askPreset(i)} style={{ fontSize: 11.5, color: 'var(--accent)', background: '#EAF3FB', padding: '5px 10px', borderRadius: 20, cursor: 'pointer' }}>
-            {p.q}
-          </span>
-        ))}
-      </div>
-
-      {/* Input */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <input
-          value={inputVal}
-          onChange={e => setInputVal(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && ask(inputVal)}
-          placeholder="e.g. What's the biggest objection to the price?"
-          style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
-        />
-        <button onClick={() => ask(inputVal)} style={{ background: 'var(--ai)', color: 'white', border: 'none', borderRadius: 8, padding: '0 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Ask</button>
-      </div>
-
-      {/* Thread */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {thread.map((entry, i) => (
-          <div key={i}>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>{entry.q}</div>
-            <div style={{ background: 'var(--ai-bg)', border: '1px solid #E4D6F0', borderRadius: 10, padding: '12px 14px', fontSize: 13 }}>
-              {entry.a === null
-                ? <><span className="spinner" />Analyzing responses…</>
-                : entry.a}
-            </div>
-          </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
-    </div>
-  )
-}
-
-// ── Verdict Report ────────────────────────────────────────────────────────────
-function VerdictReport({ total }: { total: number }) {
-  return (
-    <div style={{ background: 'linear-gradient(135deg, var(--ai-bg), #FFFFFF)', border: '1px solid #E4D6F0', borderRadius: 12, padding: 22, marginBottom: 20 }}>
-      <h2 style={{ fontSize: 15, margin: '0 0 4px', color: 'var(--ai)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        Verdict Report <AIBadge />
-      </h2>
-      <div style={{ fontSize: 12, color: 'var(--grey)', marginBottom: 10 }}>Goal-to-Insight: direct answer to the original business question.</div>
-
-      <div style={{ fontSize: 16, fontWeight: 700, margin: '6px 0 10px' }}>
-        62% would pay $15/month — price sensitivity is highest among under-35s.
-      </div>
-      <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 6 }}>
-        Based on {total || 142} responses against a target sample of 120 {total >= 120 ? '(reached)' : ''}.
-      </div>
-      <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13 }}>
-        <li style={{ marginBottom: 4 }}>68% of respondents aged 35+ rated purchase intent "likely" or "very likely," vs. 41% of under-35s.</li>
-        <li style={{ marginBottom: 4 }}>Perceived value was the strongest driver — respondents who rated value 4–5★ were 3× more likely to say yes.</li>
-        <li style={{ marginBottom: 4 }}>Top objection: "not sure I'd use it often enough" (mentioned in 22% of negative/neutral responses).</li>
-      </ul>
-
-      <div style={{ fontSize: 11, color: 'var(--ai)', background: 'white', border: '1px dashed #C9A6DD', borderRadius: 6, padding: '6px 10px', marginTop: 14, display: 'inline-block' }}>
-        Mocked verdict — real version runs live analysis once AI integration is enabled (Phase 4).
-      </div>
-    </div>
-  )
-}
