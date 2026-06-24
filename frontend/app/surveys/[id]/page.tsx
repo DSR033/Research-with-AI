@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getSurvey, updateSurvey, createQuestion, getResults } from '../../../lib/api'
+import TopBar from '../../../components/TopBar'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -660,21 +661,7 @@ export default function SurveyBuilder() {
   )
 }
 
-function TopBar() {
-  const router = useRouter()
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px' }}>
-      <div onClick={() => router.push('/')} style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent)', cursor: 'pointer' }}>SurveyAI</div>
-      <div style={{ display: 'flex', gap: 24, fontSize: 14, color: 'var(--grey)' }}>
-        <span style={{ cursor: 'pointer' }} onClick={() => router.push('/')}>Surveys</span>
-        <span style={{ cursor: 'pointer' }}>Templates</span>
-        <span style={{ cursor: 'pointer' }}>Team</span>
-        <span style={{ cursor: 'pointer' }}>Billing</span>
-      </div>
-      <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>D</div>
-    </div>
-  )
-}
+// TopBar imported from components/TopBar
 
 function StatTile({ color, num, label }: { color: 'blue' | 'green' | 'purple'; num: string; label: string }) {
   const colors = {

@@ -1,5 +1,6 @@
 'use client'
 import { usePathname, useRouter } from 'next/navigation'
+import TopBar from '../../components/TopBar'
 
 const NAV = [
   { href: '/admin/billing', icon: '💳', label: 'Billing & Plan' },
@@ -14,19 +15,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Topbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px' }}>
-        <div onClick={() => router.push('/')} style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent)', cursor: 'pointer' }}>SurveyAI</div>
-        <div style={{ display: 'flex', gap: 24, fontSize: 14, color: 'var(--grey)' }}>
-          <span style={{ cursor: 'pointer' }} onClick={() => router.push('/')}>Surveys</span>
-          <span style={{ cursor: 'pointer' }}>Templates</span>
-          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Admin</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 12, background: 'var(--amber-bg)', color: 'var(--amber)', padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>Owner</span>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>D</div>
-        </div>
-      </div>
+      <TopBar activeLabel="Admin" />
 
       <div style={{ display: 'flex', maxWidth: 1120, margin: '0 auto', padding: '32px 24px', gap: 28 }}>
         {/* Sidebar */}

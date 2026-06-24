@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import TopBar from '../../../../components/TopBar'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -134,18 +135,7 @@ export default function AnalysisDashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Topbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px' }}>
-        <div onClick={() => router.push('/')} style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent)', cursor: 'pointer' }}>SurveyAI</div>
-        <div style={{ display: 'flex', gap: 24, fontSize: 14, color: 'var(--grey)' }}>
-          <span style={{ cursor: 'pointer' }} onClick={() => router.push('/')}>Surveys</span>
-          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Analysis</span>
-          <span style={{ cursor: 'pointer' }}>Templates</span>
-          <span style={{ cursor: 'pointer' }}>Team</span>
-          <span style={{ cursor: 'pointer' }}>Billing</span>
-        </div>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>D</div>
-      </div>
+      <TopBar activeLabel="Analysis" />
 
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '28px 24px 60px' }}>
         {/* Breadcrumb */}

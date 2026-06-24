@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchSurveys, createSurvey } from '../lib/api'
+import TopBar from '../components/TopBar'
 
 interface Survey {
   id: string
@@ -36,17 +37,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Topbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px' }}>
-        <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent)' }}>SurveyAI</div>
-        <div style={{ display: 'flex', gap: 24, fontSize: 14, color: 'var(--grey)' }}>
-          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Surveys</span>
-          <span style={{ cursor: 'pointer' }}>Templates</span>
-          <span style={{ cursor: 'pointer' }}>Team</span>
-          <span style={{ cursor: 'pointer' }}>Billing</span>
-        </div>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>D</div>
-      </div>
+      <TopBar activeLabel="Surveys" />
 
       <div style={{ maxWidth: 1120, margin: '0 auto', padding: '32px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
