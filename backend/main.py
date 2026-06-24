@@ -1,20 +1,32 @@
 import json
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import anthropic
+import stripe
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICES = {
+    "starter": os.getenv("STRIPE_PRICE_STARTER", ""),
+    "pro": os.getenv("STRIPE_PRICE_PRO", ""),
+}
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+if STRIPE_SECRET_KEY and not STRIPE_SECRET_KEY.startswith("sk_test_your"):
+    stripe.api_key = STRIPE_SECRET_KEY
+
+PLAN_NAMES = {"free": "Free", "starter": "Starter", "pro": "Pro"}
 
 app = FastAPI(title="Survey Platform API")
 
@@ -153,6 +165,124 @@ def get_results(survey_id: str):
         "complete": sum(1 for r in responses.data if r["status"] == "complete"),
         "partial": sum(1 for r in responses.data if r["status"] == "partial"),
     }
+
+
+# ─── Billing ─────────────────────────────────────────────────────────────────
+
+def _stripe_ready():
+    return stripe.api_key is not None and bool(stripe.api_key)
+
+
+@app.get("/billing/plan")
+def get_plan(user_id: str):
+    """Return the current plan for a user."""
+    result = supabase.table("profiles").select("plan, plan_status, plan_period_end, stripe_customer_id").eq("id", user_id).single().execute()
+    if not result.data:
+        raise HTTPException(404, "Profile not found")
+    return result.data
+
+
+@app.post("/billing/checkout")
+def create_checkout(payload: dict):
+    """Create a Stripe Checkout session for plan upgrade."""
+    if not _stripe_ready():
+        raise HTTPException(503, "Stripe is not configured yet. Add STRIPE_SECRET_KEY to backend/.env")
+
+    plan = payload.get("plan")
+    user_id = payload.get("user_id")
+    user_email = payload.get("email", "")
+
+    if plan not in STRIPE_PRICES or not STRIPE_PRICES[plan]:
+        raise HTTPException(400, f"No Stripe Price ID configured for plan '{plan}'")
+
+    # Get or create Stripe customer
+    profile = supabase.table("profiles").select("stripe_customer_id").eq("id", user_id).single().execute().data
+    customer_id = profile.get("stripe_customer_id") if profile else None
+
+    if not customer_id:
+        customer = stripe.Customer.create(email=user_email, metadata={"user_id": user_id})
+        customer_id = customer.id
+        supabase.table("profiles").update({"stripe_customer_id": customer_id}).eq("id", user_id).execute()
+
+    session = stripe.checkout.Session.create(
+        customer=customer_id,
+        payment_method_types=["card"],
+        line_items=[{"price": STRIPE_PRICES[plan], "quantity": 1}],
+        mode="subscription",
+        success_url=f"{FRONTEND_URL}/admin/billing?success=1&plan={plan}",
+        cancel_url=f"{FRONTEND_URL}/admin/billing?canceled=1",
+        metadata={"user_id": user_id, "plan": plan},
+    )
+    return {"url": session.url}
+
+
+@app.post("/billing/portal")
+def customer_portal(payload: dict):
+    """Create a Stripe Customer Portal session for managing subscription."""
+    if not _stripe_ready():
+        raise HTTPException(503, "Stripe is not configured yet.")
+
+    user_id = payload.get("user_id")
+    profile = supabase.table("profiles").select("stripe_customer_id").eq("id", user_id).single().execute().data
+    customer_id = profile.get("stripe_customer_id") if profile else None
+
+    if not customer_id:
+        raise HTTPException(400, "No billing account found. Subscribe to a plan first.")
+
+    session = stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=f"{FRONTEND_URL}/admin/billing",
+    )
+    return {"url": session.url}
+
+
+@app.post("/billing/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events."""
+    if not _stripe_ready():
+        raise HTTPException(503, "Stripe not configured.")
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(400, "Invalid webhook signature")
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        user_id = session["metadata"].get("user_id")
+        plan = session["metadata"].get("plan", "starter")
+        if user_id:
+            supabase.table("profiles").update({
+                "plan": plan,
+                "plan_status": "active",
+            }).eq("id", user_id).execute()
+
+    elif event["type"] in ("customer.subscription.updated", "customer.subscription.deleted"):
+        sub = event["data"]["object"]
+        customer_id = sub["customer"]
+        profile = supabase.table("profiles").select("id").eq("stripe_customer_id", customer_id).single().execute().data
+        if profile:
+            status = sub["status"]  # active | past_due | canceled | trialing
+            plan = "free" if sub["status"] == "canceled" else None
+            update = {"plan_status": status}
+            if plan:
+                update["plan"] = plan
+            if sub.get("current_period_end"):
+                from datetime import datetime
+                update["plan_period_end"] = datetime.utcfromtimestamp(sub["current_period_end"]).isoformat()
+            supabase.table("profiles").update(update).eq("id", profile["id"]).execute()
+
+    elif event["type"] == "invoice.payment_failed":
+        invoice = event["data"]["object"]
+        customer_id = invoice["customer"]
+        profile = supabase.table("profiles").select("id").eq("stripe_customer_id", customer_id).single().execute().data
+        if profile:
+            supabase.table("profiles").update({"plan_status": "past_due"}).eq("id", profile["id"]).execute()
+
+    return {"received": True}
 
 
 # ─── AI: Prompt-to-Survey ────────────────────────────────────────────────────
