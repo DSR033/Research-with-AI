@@ -138,7 +138,21 @@ export default function AnalysisDashboard() {
           ← Back to Builder
         </div>
 
-        <h1 style={{ fontSize: 22, margin: '0 0 2px' }}>{survey.title}</h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+          <h1 style={{ fontSize: 22, margin: 0 }}>{survey.title}</h1>
+          <a
+            href={`${API}/surveys/${id}/export.csv`}
+            download
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+              borderRadius: 8, border: '1px solid var(--border)', background: 'white',
+              color: 'var(--text)', fontSize: 13, fontWeight: 600, textDecoration: 'none',
+              flexShrink: 0,
+            }}
+          >
+            ↓ Export CSV
+          </a>
+        </div>
         <div style={{ color: 'var(--grey)', fontSize: 13, marginBottom: 22 }}>
           {total} responses · {survey.status === 'active' ? 'Live' : `Closed ${new Date(survey.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
         </div>

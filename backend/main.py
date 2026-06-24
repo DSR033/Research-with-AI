@@ -1,7 +1,10 @@
+import csv
+import io
 import json
 import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import anthropic
@@ -165,6 +168,89 @@ def get_results(survey_id: str):
         "complete": sum(1 for r in responses.data if r["status"] == "complete"),
         "partial": sum(1 for r in responses.data if r["status"] == "partial"),
     }
+
+
+# ─── Export ──────────────────────────────────────────────────────────────────
+
+@app.get("/surveys/{survey_id}/export.csv")
+def export_csv(survey_id: str):
+    """Download all responses for a survey as a CSV file."""
+    # Fetch survey metadata
+    survey = supabase.table("surveys").select("title").eq("id", survey_id).single().execute().data
+    if not survey:
+        raise HTTPException(404, "Survey not found")
+
+    # Fetch questions ordered by position
+    questions = supabase.table("questions").select("id, title, type, position").eq("survey_id", survey_id).order("position").execute().data
+
+    # Fetch all responses
+    responses = supabase.table("responses").select("id, status, started_at, completed_at").eq("survey_id", survey_id).order("started_at").execute().data
+
+    if not responses:
+        # Return empty CSV with headers only
+        output = io.StringIO()
+        writer = csv.writer(output)
+        meta_cols = ["response_id", "status", "started_at", "completed_at"]
+        q_cols = [f"Q{i+1}: {q['title'][:60]}" for i, q in enumerate(questions)]
+        writer.writerow(meta_cols + q_cols)
+        output.seek(0)
+        filename = f"{survey['title'][:40].replace(' ', '_')}_responses.csv"
+        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+                                 headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    # Fetch all answers for these responses in one query
+    response_ids = [r["id"] for r in responses]
+    answers_raw = supabase.table("answers").select("response_id, question_id, value").in_("response_id", response_ids).execute().data
+
+    # Index answers: {response_id: {question_id: value}}
+    answer_index: dict[str, dict[str, str]] = {}
+    for a in answers_raw:
+        rid = a["response_id"]
+        qid = a["question_id"]
+        val = a["value"]
+        # Flatten value JSON to a readable string
+        if isinstance(val, dict):
+            if "text" in val:
+                display = str(val["text"])
+            elif "number" in val:
+                display = str(val["number"])
+            elif "choice" in val:
+                display = str(val["choice"])
+            elif "options" in val:
+                display = ", ".join(val["options"])
+            else:
+                display = json.dumps(val)
+        else:
+            display = str(val)
+        answer_index.setdefault(rid, {})[qid] = display
+
+    # Build CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    meta_cols = ["response_id", "status", "started_at", "completed_at"]
+    q_cols = [f"Q{i+1}: {q['title'][:60]}" for i, q in enumerate(questions)]
+    writer.writerow(meta_cols + q_cols)
+
+    for r in responses:
+        ans = answer_index.get(r["id"], {})
+        row = [
+            r["id"],
+            r["status"],
+            r.get("started_at", "")[:19].replace("T", " ") if r.get("started_at") else "",
+            r.get("completed_at", "")[:19].replace("T", " ") if r.get("completed_at") else "",
+        ]
+        for q in questions:
+            row.append(ans.get(q["id"], ""))
+        writer.writerow(row)
+
+    output.seek(0)
+    filename = f"{survey['title'][:40].replace(' ', '_')}_responses.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ─── Billing ─────────────────────────────────────────────────────────────────
