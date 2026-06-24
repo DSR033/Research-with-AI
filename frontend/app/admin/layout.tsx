@@ -1,6 +1,8 @@
 'use client'
+import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import TopBar from '../../components/TopBar'
+import { createClient } from '../../lib/supabase-browser'
 
 const NAV = [
   { href: '/admin/billing', icon: '💳', label: 'Billing & Plan' },
@@ -9,9 +11,57 @@ const NAV = [
   { href: '/admin/usage', icon: '📊', label: 'Usage & Costs' },
 ]
 
+const ADMIN_ROLES = ['owner', 'admin']
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const [status, setStatus] = useState<'loading' | 'allowed' | 'denied'>('loading')
+  const [role, setRole] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { router.replace('/login'); return }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      const userRole = profile?.role ?? 'member'
+      setRole(userRole)
+      setStatus(ADMIN_ROLES.includes(userRole) ? 'allowed' : 'denied')
+    })
+  }, [router])
+
+  if (status === 'loading') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--grey)' }}>
+        Checking permissions…
+      </div>
+    )
+  }
+
+  if (status === 'denied') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+        <TopBar activeLabel="Admin" />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 57px)', gap: 12 }}>
+          <div style={{ fontSize: 40 }}>🔒</div>
+          <h2 style={{ fontSize: 20, margin: 0 }}>Access Denied</h2>
+          <p style={{ color: 'var(--grey)', margin: 0, fontSize: 14 }}>
+            Your role (<strong>{role}</strong>) doesn't have permission to access the Admin Panel.
+          </p>
+          <p style={{ color: 'var(--grey)', margin: 0, fontSize: 13 }}>Contact your workspace owner to request access.</p>
+          <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => router.push('/')}>
+            Back to Surveys
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
@@ -52,6 +102,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               Upgrade Plan
             </button>
           </div>
+
+          {role && (
+            <div style={{ marginTop: 12, fontSize: 11, color: 'var(--grey)', textAlign: 'center' }}>
+              Your role: <strong style={{ color: 'var(--accent)' }}>{role}</strong>
+            </div>
+          )}
         </div>
 
         {/* Content */}

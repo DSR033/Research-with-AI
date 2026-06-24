@@ -36,7 +36,9 @@
       "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\(p['version']\\)\")",
       "Bash(curl -s --max-time 10 http://localhost:3000/login)",
       "Skill(claude-api)",
-      "Skill(claude-api:*)"
+      "Skill(claude-api:*)",
+      "Bash(git commit -m ' *)",
+      "Bash(venv/bin/python3 add_profile_policies.py)"
     ]
   }
 }
