@@ -107,6 +107,44 @@ def submit_response(survey_id: str, payload: dict):
     return {"response_id": response_id}
 
 
+# ─── Templates ────────────────────────────────────────────────────────────────
+
+@app.get("/templates")
+def list_templates():
+    result = supabase.table("templates").select("*").eq("is_public", True).order("category").execute()
+    return result.data
+
+
+@app.post("/templates/{template_id}/use")
+def use_template(template_id: str, payload: dict):
+    """Create a new survey pre-filled from a template."""
+    tmpl = supabase.table("templates").select("*").eq("id", template_id).single().execute().data
+    structure = tmpl["structure"]
+
+    survey = supabase.table("surveys").insert({
+        "title": structure.get("title", tmpl["name"]),
+        "mode": payload.get("mode", "classic"),
+        "status": "draft",
+    }).execute().data[0]
+
+    for i, q in enumerate(structure.get("questions", [])):
+        q_row = supabase.table("questions").insert({
+            "survey_id": survey["id"],
+            "type": q["type"],
+            "title": q["title"],
+            "required": q.get("required", False),
+            "position": i,
+        }).execute().data[0]
+
+        if q.get("options"):
+            supabase.table("question_options").insert([
+                {"question_id": q_row["id"], "label": opt, "position": j}
+                for j, opt in enumerate(q["options"])
+            ]).execute()
+
+    return {"survey_id": survey["id"]}
+
+
 @app.get("/surveys/{survey_id}/results")
 def get_results(survey_id: str):
     responses = supabase.table("responses").select("id, status, completed_at").eq("survey_id", survey_id).execute()

@@ -38,7 +38,8 @@
       "Skill(claude-api)",
       "Skill(claude-api:*)",
       "Bash(git commit -m ' *)",
-      "Bash(venv/bin/python3 add_profile_policies.py)"
+      "Bash(venv/bin/python3 add_profile_policies.py)",
+      "Bash(venv/bin/python3 seed_templates.py)"
     ]
   }
 }
