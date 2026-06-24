@@ -154,45 +154,78 @@ export default function SurveyBuilder() {
     }, 700)
   }
 
-  const generateFromPrompt = () => {
+  const generateFromPrompt = async () => {
     setAiLoading(true)
-    setTimeout(() => {
-      setSurvey(prev => prev ? { ...prev, title: 'Feature Pricing Survey (AI draft)' } : prev)
-      setQuestions([
-        { id: 'mock-1', type: 'nps', title: 'How likely are you to recommend our product?', required: false, position: 0 },
-        { id: 'mock-2', type: 'single_choice', title: 'Would you pay $15/month for this feature?', required: true, position: 1, options: ['Definitely yes', 'Probably yes', 'Not sure', 'Probably not', 'Definitely not'] },
-        { id: 'mock-3', type: 'rating', title: 'How valuable would this feature be to your workflow?', required: false, position: 2 },
-        { id: 'mock-4', type: 'long_text', title: 'What would make this feature more worth paying for?', required: false, position: 3 },
-      ])
+    try {
+      const res = await fetch(`${API}/surveys/${id}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setSurvey(prev => prev ? { ...prev, title: data.title } : prev)
+      // Reload questions from server (options are created server-side)
+      const qRes = await fetch(`${API}/surveys/${id}/questions`)
+      const qs = await qRes.json()
+      setQuestions(qs.map((q: Question & { question_options?: Array<{label: string}> }) => ({
+        ...q,
+        options: q.question_options?.map((o: {label: string}) => o.label),
+        logicOn: false,
+      })))
       setBuildMode('manual')
-      setAiLoading(false)
-    }, 1200)
+    } catch (e) {
+      alert('Generation failed. Check your ANTHROPIC_API_KEY in backend/.env')
+      console.error(e)
+    }
+    setAiLoading(false)
   }
 
-  const runG2I = () => {
+  const runG2I = async () => {
     setAiLoading(true)
-    setTimeout(() => {
-      setG2iResult(`<b>Recommended method:</b> Concept Test (purchase-intent focus)<br><br><b>Suggested sample size:</b> ~120 respondents<br><b>Suggested audience:</b> Existing customers active in last 30 days`)
-      setAiLoading(false)
-    }, 1300)
+    try {
+      const res = await fetch(`${API}/surveys/${id}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: g2iPrompt }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setG2iResult(`<b>AI has generated a survey based on your goal.</b><br><br><b>Title:</b> ${data.title}<br><b>Questions created:</b> ${data.questions?.length ?? 0}`)
+      const qRes = await fetch(`${API}/surveys/${id}/questions`)
+      const qs = await qRes.json()
+      setQuestions(qs.map((q: Question & { question_options?: Array<{label: string}> }) => ({
+        ...q, options: q.question_options?.map((o: {label: string}) => o.label), logicOn: false,
+      })))
+    } catch (e) {
+      setG2iResult('<b>Generation failed.</b> Check your ANTHROPIC_API_KEY in backend/.env')
+    }
+    setAiLoading(false)
   }
 
   const buildFromG2I = () => {
-    setQuestions([
-      { id: 'mock-g1', type: 'single_choice', title: 'After seeing this feature, how likely are you to purchase it at $15/month?', required: false, position: 0, options: ['Very likely', 'Likely', 'Neutral', 'Unlikely', 'Very unlikely'] },
-      { id: 'mock-g2', type: 'rating', title: 'How would you rate the value of this feature?', required: false, position: 1 },
-      { id: 'mock-g3', type: 'long_text', title: 'What, if anything, would stop you from purchasing?', required: false, position: 2 },
-    ])
     setBuildMode('manual')
     setG2iResult(null)
   }
 
-  const runExpertReview = () => {
+  const runExpertReview = async () => {
     setExpertLoading(true)
-    setTimeout(() => {
-      setExpertReview('amber:Q2 wording may lead respondents. Consider neutral phrasing.|amber:Survey length: ~3 min — within recommended range for 80%+ completion.|green:Question order looks good. Sensitive questions placed at end.')
-      setExpertLoading(false)
-    }, 1200)
+    try {
+      const res = await fetch(`${API}/surveys/${id}/expert-review`, { method: 'POST' })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      // Convert to pipe-separated format used by the renderer
+      const formatted = data.findings
+        .map((f: { severity: string; text: string }) => {
+          const color = f.severity === 'pass' ? 'green' : f.severity === 'warning' ? 'amber' : 'amber'
+          return `${color}:${f.text}`
+        })
+        .join('|')
+      setExpertReview(formatted + (data.summary ? `|green:Overall: ${data.summary} (Score: ${data.overall_score}/10)` : ''))
+    } catch (e) {
+      setExpertReview('amber:Review failed. Check your ANTHROPIC_API_KEY in backend/.env')
+    }
+    setExpertLoading(false)
   }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--grey)' }}>Loading…</div>

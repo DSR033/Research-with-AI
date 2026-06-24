@@ -278,32 +278,34 @@ export default function AnalysisDashboard() {
 
 // ── Ask Your Data ─────────────────────────────────────────────────────────────
 function AskYourData() {
+  const params = useParams()
+  const surveyId = params.id as string
   const [thread, setThread] = useState<Array<{ q: string; a: string | null }>>([])
   const [inputVal, setInputVal] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const ask = (question: string) => {
+  const ask = async (question: string) => {
     if (!question.trim()) return
-    const entry = { q: question, a: null }
-    setThread(prev => [...prev, entry])
+    setThread(prev => [...prev, { q: question, a: null }])
     setInputVal('')
-    setTimeout(() => {
-      setThread(prev => prev.map(e =>
-        e.q === question && e.a === null
-          ? { ...e, a: 'Based on the dataset, the clearest pattern is around perceived value and usage frequency — respondents who rated the feature highly on both were 3× more likely to say they\'d pay. (Mocked — real version queries live data once AI is enabled.)' }
-          : e
-      ))
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, 1100)
+    try {
+      const res = await fetch(`${API}/surveys/${surveyId}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      })
+      const data = res.ok ? await res.json() : null
+      const answer = data?.answer ?? 'Unable to answer — check your ANTHROPIC_API_KEY.'
+      setThread(prev => prev.map(e => e.q === question && e.a === null ? { ...e, a: answer } : e))
+    } catch {
+      setThread(prev => prev.map(e => e.q === question && e.a === null ? { ...e, a: 'Request failed — is the backend running?' } : e))
+    }
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const askPreset = (i: number) => {
     const p = PRESET_QA[i]
-    setThread(prev => [...prev, { q: p.q, a: null }])
-    setTimeout(() => {
-      setThread(prev => prev.map(e => e.q === p.q && e.a === null ? { ...e, a: p.a } : e))
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, 1100)
+    ask(p.q)
   }
 
   return (
