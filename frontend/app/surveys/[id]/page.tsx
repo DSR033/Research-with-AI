@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getSurvey, updateSurvey, createQuestion, getResults } from '../../../lib/api'
 import TopBar from '../../../components/TopBar'
+import InsightsTab from './InsightsTab'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -438,42 +439,7 @@ export default function SurveyBuilder() {
         )}
 
         {/* ── INSIGHTS TAB ── */}
-        {activeTab === 'insights' && (
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
-              <div>
-                <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Insights</h2>
-                <div style={{ fontSize: 12.5, color: 'var(--grey)' }}>Live response analytics for this survey.</div>
-              </div>
-              <a
-                href={`${API}/surveys/${id}/export.csv`}
-                download
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                  borderRadius: 8, border: '1px solid var(--border)', background: 'white',
-                  color: 'var(--text)', fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                  opacity: (results?.total ?? 0) === 0 ? 0.4 : 1,
-                  pointerEvents: (results?.total ?? 0) === 0 ? 'none' : 'auto',
-                }}
-              >
-                ↓ Export CSV
-              </a>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 20 }}>
-              <StatTile color="blue" num={String(results?.total ?? 0)} label="Total Responses" />
-              <StatTile color="green" num={results?.total ? `${Math.round((results.complete / results.total) * 100)}%` : '0%'} label="Completion Rate" />
-              <StatTile color="purple" num={String(results?.partial ?? 0)} label="Partial Responses" />
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button className="btn" onClick={() => router.push(`/surveys/${id}/analysis`)}>
-                Open Analysis Dashboard →
-              </button>
-              <button className="btn secondary" onClick={() => router.push(`/surveys/${id}/respond`)}>
-                Preview as Respondent
-              </button>
-            </div>
-          </div>
-        )}
+        {activeTab === 'insights' && <InsightsTab surveyId={id} />}
 
 
       </div>

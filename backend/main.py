@@ -170,6 +170,75 @@ def get_results(survey_id: str):
     }
 
 
+# ─── Responses (detail, update, delete) ──────────────────────────────────────
+
+@app.get("/surveys/{survey_id}/responses-full")
+def get_responses_full(survey_id: str):
+    """All responses with their answers and question metadata."""
+    questions = (supabase.table("questions")
+        .select("id, title, type, position")
+        .eq("survey_id", survey_id)
+        .order("position")
+        .execute().data)
+
+    responses = (supabase.table("responses")
+        .select("id, status, started_at, completed_at, metadata")
+        .eq("survey_id", survey_id)
+        .order("started_at", desc=True)
+        .execute().data)
+
+    if not responses:
+        return {"questions": questions, "responses": []}
+
+    response_ids = [r["id"] for r in responses]
+    answers_raw = (supabase.table("answers")
+        .select("response_id, question_id, value")
+        .in_("response_id", response_ids)
+        .execute().data)
+
+    # Index: {response_id: {question_id: display_value}}
+    answer_index: dict = {}
+    for a in answers_raw:
+        rid, qid, val = a["response_id"], a["question_id"], a["value"]
+        if isinstance(val, dict):
+            if "text" in val:   display = str(val["text"])
+            elif "number" in val: display = str(val["number"])
+            elif "choice" in val: display = str(val["choice"])
+            elif "options" in val: display = ", ".join(val["options"])
+            else: display = json.dumps(val)
+        else:
+            display = str(val)
+        answer_index.setdefault(rid, {})[qid] = display
+
+    # Attach answers to each response
+    for r in responses:
+        r["answers"] = answer_index.get(r["id"], {})
+
+    return {"questions": questions, "responses": responses}
+
+
+@app.patch("/surveys/{survey_id}/responses/{response_id}")
+def update_response_status(survey_id: str, response_id: str, payload: dict):
+    """Update response status — disqualified, partial, complete."""
+    status = payload.get("status")
+    if status not in ("complete", "partial", "disqualified"):
+        raise HTTPException(400, "status must be complete, partial, or disqualified")
+    result = (supabase.table("responses")
+        .update({"status": status})
+        .eq("id", response_id)
+        .eq("survey_id", survey_id)
+        .execute())
+    return {"updated": response_id, "status": status}
+
+
+@app.delete("/surveys/{survey_id}/responses/{response_id}")
+def delete_response(survey_id: str, response_id: str):
+    """Permanently delete a response and its answers."""
+    supabase.table("answers").delete().eq("response_id", response_id).execute()
+    supabase.table("responses").delete().eq("id", response_id).eq("survey_id", survey_id).execute()
+    return {"deleted": response_id}
+
+
 # ─── Export ──────────────────────────────────────────────────────────────────
 
 @app.get("/surveys/{survey_id}/export.csv")
