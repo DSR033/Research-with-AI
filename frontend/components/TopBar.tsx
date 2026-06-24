@@ -10,7 +10,6 @@ const NAV: NavItem[] = [
   { label: 'Templates', href: '/templates' },
   { label: 'Team', href: '/admin/team' },
   { label: 'Billing', href: '/admin/billing' },
-  { label: 'Admin', href: '/admin' },
 ]
 
 export default function TopBar({ activeLabel }: { activeLabel?: string }) {
