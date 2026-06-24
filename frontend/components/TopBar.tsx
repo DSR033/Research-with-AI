@@ -60,13 +60,13 @@ export default function TopBar({ activeLabel }: { activeLabel?: string }) {
   const active = activeLabel ?? (pathname === '/' ? 'Surveys' : NAV.find(n => n.href !== '/' && pathname.startsWith(n.href))?.label)
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px', position: 'sticky', top: 0, zIndex: 40 }}>
+    <div className="topbar-inner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px', position: 'sticky', top: 0, zIndex: 40 }}>
 
       <div onClick={() => router.push('/')} style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent)', cursor: 'pointer' }}>
         SurveyAI
       </div>
 
-      <div style={{ display: 'flex', gap: 24, fontSize: 14 }}>
+      <div className="topbar-nav" style={{ display: 'flex', gap: 24, fontSize: 14 }}>
         {NAV.map(n => (
           <span
             key={n.label}

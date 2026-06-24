@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
 
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
 const ROLES = ['owner', 'admin', 'member', 'viewer'] as const
 type Role = typeof ROLES[number]
 
@@ -32,23 +34,39 @@ export default function TeamPage() {
   const [showInvite, setShowInvite] = useState(false)
   const [editingRole, setEditingRole] = useState<string | null>(null)
 
-  const handleInvite = () => {
+  const [inviteError, setInviteError] = useState<string | null>(null)
+
+  const handleInvite = async () => {
     if (!inviteEmail.trim()) return
     setInviting(true)
-    setTimeout(() => {
+    setInviteError(null)
+    try {
+      const res = await fetch(`${API}/admin/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setInviteError(err.detail ?? 'Invite failed. Please try again.')
+        setInviting(false)
+        return
+      }
       const name = inviteEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       setMembers(prev => [...prev, {
         id: String(Date.now()),
         name,
         email: inviteEmail.trim(),
         role: inviteRole,
-        joined: 'Pending invite',
+        joined: 'Invite sent ✓',
         avatar: name[0]?.toUpperCase() ?? '?',
       }])
       setInviteEmail('')
       setShowInvite(false)
-      setInviting(false)
-    }, 700)
+    } catch {
+      setInviteError('Network error — is the backend running?')
+    }
+    setInviting(false)
   }
 
   const changeRole = (id: string, role: Role) => {
@@ -168,8 +186,13 @@ export default function TeamPage() {
               </div>
             </div>
 
+            {inviteError && (
+              <div style={{ fontSize: 13, color: 'var(--red)', background: 'var(--red-bg)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                {inviteError}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-              <button className="btn ghost" onClick={() => setShowInvite(false)}>Cancel</button>
+              <button className="btn ghost" onClick={() => { setShowInvite(false); setInviteError(null) }}>Cancel</button>
               <button className="btn" onClick={handleInvite} disabled={!inviteEmail.trim() || inviting}>
                 {inviting ? <><span className="spinner" />Sending…</> : 'Send Invite'}
               </button>

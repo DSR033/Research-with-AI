@@ -69,7 +69,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <div style={{ display: 'flex', maxWidth: 1120, margin: '0 auto', padding: '32px 24px', gap: 28 }}>
         {/* Sidebar */}
-        <div style={{ width: 210, flexShrink: 0 }}>
+        <div className="admin-sidebar" style={{ width: 210, flexShrink: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--grey)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Admin Panel</div>
           <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {NAV.map(n => {
@@ -111,7 +111,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+        <div className="admin-content" style={{ flex: 1, minWidth: 0 }}>{children}</div>
       </div>
     </div>
   )

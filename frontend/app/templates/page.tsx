@@ -114,7 +114,7 @@ export default function TemplatesPage() {
         {loading ? (
           <div style={{ textAlign: 'center', color: 'var(--grey)', padding: 60 }}>Loading templates…</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+          <div className="templates-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
             {filtered.map(t => {
               const qCount = t.structure?.questions?.length ?? 0
               const catStyle = CATEGORY_COLORS[t.category] ?? { bg: 'var(--bg)', text: 'var(--grey)' }

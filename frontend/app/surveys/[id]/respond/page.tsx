@@ -15,11 +15,20 @@ interface Question {
   question_options?: Array<{ id: string; label: string; position: number }>
 }
 
+interface SurveySettings {
+  require_response?: boolean
+  no_duplicates?: boolean
+  randomize?: boolean
+}
+
 interface Survey {
   id: string
   title: string
   mode: string
   status: string
+  close_date?: string | null
+  response_limit?: number | null
+  settings?: SurveySettings
   questions?: Question[]
 }
 
@@ -33,6 +42,39 @@ interface Message {
 interface Answer {
   question_id: string
   value: { text?: string; choice?: string; number?: number; options?: string[] }
+}
+
+// ─── Respondent ID (localStorage, per-survey duplicate detection) ─────────────
+function getRespondentId(surveyId: string): string {
+  const key = `respondent_${surveyId}`
+  let rid = typeof window !== 'undefined' ? localStorage.getItem(key) : null
+  if (!rid) {
+    rid = `r_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    if (typeof window !== 'undefined') localStorage.setItem(key, rid)
+  }
+  return rid
+}
+
+function markResponded(surveyId: string) {
+  if (typeof window !== 'undefined')
+    localStorage.setItem(`responded_${surveyId}`, '1')
+}
+
+function hasResponded(surveyId: string): boolean {
+  return typeof window !== 'undefined'
+    ? localStorage.getItem(`responded_${surveyId}`) === '1'
+    : false
+}
+
+// ─── Gate screen ──────────────────────────────────────────────────────────────
+function SurveyGate({ icon, title, desc }: { icon: string; title: string; desc: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', gap: 12, padding: 24, textAlign: 'center' }}>
+      <div style={{ fontSize: 40 }}>{icon}</div>
+      <div style={{ fontWeight: 600, fontSize: 16 }}>{title}</div>
+      <div style={{ color: 'var(--grey)', fontSize: 13, maxWidth: 320 }}>{desc}</div>
+    </div>
+  )
 }
 
 // ─── Type helpers ────────────────────────────────────────────────────────────
@@ -65,9 +107,17 @@ export default function RespondPage() {
       fetch(`${API}/surveys/${id}/logic`).then(r => r.json()).catch(() => []),
     ]).then(([data, rules]) => {
       setSurvey(data)
-      const qs = (data.questions || []).sort(
+      let qs: Question[] = (data.questions || []).sort(
         (a: Question, b: Question) => a.position - b.position
       )
+      // Randomize if configured
+      if (data.settings?.randomize) {
+        qs = [...qs].sort(() => Math.random() - 0.5)
+      }
+      // Mark all required if require_response is on
+      if (data.settings?.require_response) {
+        qs = qs.map((q: Question) => ({ ...q, required: true }))
+      }
       setQuestions(qs)
       setLogicRules(rules ?? [])
       setMode(data.mode === 'conversational' ? 'conversational' : 'classic')
@@ -84,13 +134,17 @@ export default function RespondPage() {
   }
 
   if (!survey || survey.status === 'draft') {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', gap: 12 }}>
-        <div style={{ fontSize: 40 }}>🔒</div>
-        <div style={{ fontWeight: 600, fontSize: 16 }}>This survey isn&apos;t available yet</div>
-        <div style={{ color: 'var(--grey)', fontSize: 13 }}>It may not be published, or the link may be incorrect.</div>
-      </div>
-    )
+    return <SurveyGate icon="🔒" title="This survey isn't available yet" desc="It may not be published, or the link may be incorrect." />
+  }
+
+  // Close date enforcement
+  if (survey.close_date && new Date(survey.close_date) < new Date()) {
+    return <SurveyGate icon="📅" title="This survey has closed" desc="The submission window for this survey has ended." />
+  }
+
+  // Duplicate submission gate (client-side fast path)
+  if (survey.settings?.no_duplicates && hasResponded(id)) {
+    return <SurveyGate icon="✅" title="Already submitted" desc="You've already completed this survey. Thank you for your response!" />
   }
 
   if (questions.length === 0) {
@@ -196,16 +250,24 @@ function ConversationalMode({ survey, questions, rules }: { survey: Survey; ques
 
   const finishSurvey = async (finalAnswers: Answer[]) => {
     setInputDisabled(true)
+    const respondentId = getRespondentId(survey.id)
     try {
-      await fetch(`${API}/surveys/${survey.id}/responses`, {
+      const res = await fetch(`${API}/surveys/${survey.id}/responses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'complete', answers: finalAnswers }),
+        body: JSON.stringify({ status: 'complete', answers: finalAnswers, respondent_id: respondentId }),
       })
+      if (!res.ok) {
+        const err = await res.json()
+        showTypingThen(() => {
+          setMessages(prev => [...prev, { id: 'err', role: 'bot', text: `⚠️ ${err.detail ?? 'Submission failed.'}` }])
+          setDone(true)
+        }, 400)
+        return
+      }
+      markResponded(survey.id)
     } catch (_) {}
-    showTypingThen(() => {
-      setDone(true)
-    }, 700)
+    showTypingThen(() => { setDone(true) }, 700)
   }
 
   const progress = qIndex < 0 ? 0 : Math.round((qIndex / questions.length) * 100)
@@ -214,7 +276,7 @@ function ConversationalMode({ survey, questions, rules }: { survey: Survey; ques
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg)', padding: 24 }}>
       {/* Phone frame */}
-      <div style={{ width: 420, height: 760, background: 'var(--card)', borderRadius: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border)' }}>
+      <div className="respondent-phone" style={{ width: 420, height: 760, background: 'var(--card)', borderRadius: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border)' }}>
 
         {/* Header */}
         <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -410,8 +472,18 @@ function ClassicMode({ survey, questions, rules }: { survey: Survey; questions: 
   const setValue = (qid: string, val: string | string[]) =>
     setAnswers(prev => ({ ...prev, [qid]: val }))
 
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
   const handleSubmit = async () => {
+    // Validate required questions
+    const missing = displayQuestions.filter(q => q.required && !answers[q.id])
+    if (missing.length > 0) {
+      setSubmitError(`Please answer all required questions (${missing.length} remaining).`)
+      return
+    }
+    setSubmitError(null)
     setSubmitting(true)
+    const respondentId = getRespondentId(survey.id)
     const payload = questions.map(q => ({
       question_id: q.id,
       value: Array.isArray(answers[q.id])
@@ -421,12 +493,23 @@ function ClassicMode({ survey, questions, rules }: { survey: Survey; questions: 
         : {},
     }))
     try {
-      await fetch(`${API}/surveys/${survey.id}/responses`, {
+      const res = await fetch(`${API}/surveys/${survey.id}/responses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'complete', answers: payload }),
+        body: JSON.stringify({ status: 'complete', answers: payload, respondent_id: respondentId }),
       })
-    } catch (_) {}
+      if (!res.ok) {
+        const err = await res.json()
+        setSubmitError(err.detail ?? 'Submission failed. Please try again.')
+        setSubmitting(false)
+        return
+      }
+      markResponded(survey.id)
+    } catch (_) {
+      setSubmitError('Network error. Please check your connection.')
+      setSubmitting(false)
+      return
+    }
     setSubmitted(true)
     setSubmitting(false)
   }
@@ -457,7 +540,12 @@ function ClassicMode({ survey, questions, rules }: { survey: Survey; questions: 
           ))}
         </div>
 
-        <div style={{ marginTop: 32, display: 'flex', justifyContent: 'flex-end' }}>
+        {submitError && (
+          <div style={{ marginTop: 16, padding: '10px 14px', background: 'var(--red-bg)', color: 'var(--red)', borderRadius: 8, fontSize: 13 }}>
+            {submitError}
+          </div>
+        )}
+        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
           <button className="btn" onClick={handleSubmit} disabled={submitting}>
             {submitting ? <><span className="spinner" />Submitting…</> : 'Submit'}
           </button>

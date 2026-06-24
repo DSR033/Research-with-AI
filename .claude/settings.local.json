@@ -49,7 +49,10 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Rule created:', d['id'][:8], '|', d['action']\\)\")",
       "Bash(venv/bin/python3 add_multi_target.py)",
       "Bash(curl -s -X POST http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c/logic -H 'Content-Type: application/json' -d '{ *)",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Rule:', d['action'], '| targets:', d.get\\('target_questions'\\)\\)\")"
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Rule:', d['action'], '| targets:', d.get\\('target_questions'\\)\\)\")",
+      "Bash(venv/bin/python3 update_trigger.py)",
+      "Bash(curl -s -X PUT http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c -H 'Content-Type: application/json' -d '{\"response_limit\": 1}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('limit cleared:', d.get\\('response_limit'\\)\\)\")"
     ]
   }
 }

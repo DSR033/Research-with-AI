@@ -210,7 +210,7 @@ export default function SurveyBuilder() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', margin: '18px 0 22px', flexWrap: 'wrap' }}>
+        <div className="builder-tabs" style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', margin: '18px 0 22px', flexWrap: 'wrap' }}>
           {TABS.map(t => (
             <div
               key={t.id}
@@ -247,7 +247,7 @@ export default function SurveyBuilder() {
         {activeTab === 'build' && (
           <div>
             {/* Builder layout */}
-            <div style={{ display: 'flex', gap: 18 }}>
+            <div className="builder-layout" style={{ display: 'flex', gap: 18 }}>
               {/* Question type panel */}
               <div style={{ width: 190, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, height: 'fit-content', flexShrink: 0 }}>
                 <h3 style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--grey)', margin: '0 0 10px' }}>Add Question</h3>

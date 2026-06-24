@@ -44,3 +44,53 @@ body {
 /* Spinner */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--ai-border); border-top-color: var(--ai); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
+
+/* ── Mobile responsiveness ── */
+@media (max-width: 768px) {
+  /* Topbar: hide secondary nav, keep logo + avatar */
+  .topbar-nav { display: none !important; }
+  .topbar-inner { padding: 10px 16px !important; }
+
+  /* Dashboard grid → single column */
+  .survey-grid { grid-template-columns: 1fr !important; }
+
+  /* Builder: full width panels */
+  .builder-layout { flex-direction: column !important; }
+  .builder-qtypes { width: 100% !important; }
+
+  /* Builder tabs: scrollable */
+  .builder-tabs { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .builder-tabs > div { display: inline-flex !important; }
+
+  /* Admin: hide sidebar, full width content */
+  .admin-sidebar { display: none !important; }
+  .admin-content { padding: 16px !important; }
+
+  /* Templates: 1 column */
+  .templates-grid { grid-template-columns: 1fr !important; }
+
+  /* Respondent: full screen on mobile */
+  .respondent-phone {
+    width: 100% !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Plan cards: stack */
+  .plan-cards { grid-template-columns: 1fr !important; }
+
+  /* Insights stat grid */
+  .stat-grid-4 { grid-template-columns: 1fr 1fr !important; }
+
+  /* Analysis dashboard: single column */
+  .analysis-twocol { grid-template-columns: 1fr !important; }
+
+  /* Share tab inputs */
+  .share-row { flex-direction: column !important; align-items: stretch !important; }
+  .share-row a, .share-row button { text-align: center; justify-content: center; }
+
+  /* Generic page padding */
+  .page-container { padding: 16px !important; }
+}

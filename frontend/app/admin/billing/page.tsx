@@ -205,7 +205,7 @@ export default function BillingPage() {
 
       {/* Plan cards */}
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Choose a plan</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 32 }}>
+      <div className="plan-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 32 }}>
         {PLANS.map(plan => {
           const isCurrent = currentPlan === plan.id
           return (

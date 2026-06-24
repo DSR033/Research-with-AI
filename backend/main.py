@@ -106,10 +106,49 @@ def create_question(survey_id: str, payload: dict):
 
 @app.post("/surveys/{survey_id}/responses")
 def submit_response(survey_id: str, payload: dict):
+    from datetime import datetime, timezone
+
+    # ── Fetch survey for config enforcement ──
+    survey = supabase.table("surveys").select(
+        "status, close_date, response_limit, settings"
+    ).eq("id", survey_id).single().execute().data
+
+    if not survey:
+        raise HTTPException(404, "Survey not found")
+    if survey["status"] != "active":
+        raise HTTPException(403, "This survey is not currently accepting responses.")
+
+    # Close date
+    if survey.get("close_date"):
+        close = datetime.fromisoformat(survey["close_date"].replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) > close:
+            raise HTTPException(403, "This survey has closed.")
+
+    # Response limit
+    if survey.get("response_limit"):
+        count = supabase.table("responses").select("id", count="exact").eq(
+            "survey_id", survey_id
+        ).in_("status", ["complete", "partial"]).execute().count or 0
+        if count >= survey["response_limit"]:
+            raise HTTPException(403, "This survey has reached its response limit.")
+
+    # Prevent duplicate submissions (keyed by respondent_id if provided)
+    settings = survey.get("settings") or {}
+    respondent_id = payload.get("respondent_id")
+    if settings.get("no_duplicates") and respondent_id:
+        existing = supabase.table("responses").select("id").eq(
+            "survey_id", survey_id
+        ).eq("respondent_id", respondent_id).execute().data
+        if existing:
+            raise HTTPException(409, "You have already submitted a response to this survey.")
+
+    # ── Insert response ──
     response = supabase.table("responses").insert({
         "survey_id": survey_id,
         "status": payload.get("status", "complete"),
-        "metadata": payload.get("metadata", {})
+        "respondent_id": respondent_id,
+        "metadata": payload.get("metadata", {}),
+        "completed_at": datetime.now(timezone.utc).isoformat() if payload.get("status") == "complete" else None,
     }).execute()
 
     response_id = response.data[0]["id"]
@@ -120,6 +159,39 @@ def submit_response(survey_id: str, payload: dict):
         supabase.table("answers").insert(answers).execute()
 
     return {"response_id": response_id}
+
+
+# ─── Team invites ────────────────────────────────────────────────────────────
+
+@app.post("/admin/invite")
+def invite_user(payload: dict):
+    """Send a Supabase Auth invite email with the specified role."""
+    import httpx
+
+    email = payload.get("email", "").strip()
+    role  = payload.get("role", "member")
+
+    if not email:
+        raise HTTPException(400, "email is required")
+    if role not in ("admin", "member", "viewer"):
+        raise HTTPException(400, "role must be admin, member, or viewer")
+
+    resp = httpx.post(
+        f"{SUPABASE_URL}/auth/v1/invite",
+        headers={
+            "apikey": SUPABASE_SECRET_KEY,
+            "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={"email": email, "data": {"role": role}},
+        timeout=10,
+    )
+
+    if resp.status_code not in (200, 201):
+        detail = resp.json().get("msg") or resp.json().get("error_description") or resp.text
+        raise HTTPException(resp.status_code, detail)
+
+    return {"invited": email, "role": role}
 
 
 # ─── Templates ────────────────────────────────────────────────────────────────
