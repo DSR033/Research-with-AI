@@ -414,28 +414,7 @@ export default function SurveyBuilder() {
 
         {/* ── SHARE TAB ── */}
         {activeTab === 'share' && (
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
-            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Share & Distribute</h2>
-            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>
-              {survey.status === 'active' ? 'Your survey is live and ready to collect responses.' : 'Publish your survey first to enable distribution.'}
-            </div>
-            {[
-              { title: 'Shareable link', meta: `surveyai.app/s/${id.slice(0, 8)}`, action: 'Copy Link', onClick: () => { navigator.clipboard.writeText(`https://surveyai.app/s/${id.slice(0, 8)}`); alert('Link copied!') } },
-              { title: 'Embed on your site', meta: `<iframe src="surveyai.app/embed/${id.slice(0, 8)}">`, action: 'Copy Code', onClick: () => { navigator.clipboard.writeText(`<iframe src="https://surveyai.app/embed/${id.slice(0, 8)}" width="100%" height="600"></iframe>`); alert('Embed code copied!') } },
-              { title: 'Email invite', meta: 'Send to a list via your provider', action: 'Send Invite', onClick: () => alert('Email invite flow — coming in Phase 3.') },
-            ].map(row => (
-              <div key={row.title} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{row.title}</div>
-                  <div style={{ color: 'var(--grey)', fontSize: 12, marginTop: 2, fontFamily: 'monospace' }}>{row.meta}</div>
-                </div>
-                <button className="btn secondary" onClick={row.onClick} disabled={survey.status !== 'active'}>{row.action}</button>
-              </div>
-            ))}
-            {survey.status !== 'active' && (
-              <button className="btn" onClick={handlePublish} style={{ marginTop: 8 }}>Publish Survey to Enable Sharing</button>
-            )}
-          </div>
+          <ShareTab surveyId={id} surveyTitle={survey.title} status={survey.status} onPublish={handlePublish} />
         )}
 
         {/* ── INSIGHTS TAB ── */}
@@ -448,6 +427,126 @@ export default function SurveyBuilder() {
 }
 
 // TopBar imported from components/TopBar
+
+function ShareTab({ surveyId, surveyTitle, status, onPublish }: {
+  surveyId: string; surveyTitle: string; status: string; onPublish: () => void
+}) {
+  const [origin, setOrigin] = useState('')
+  const [copied, setCopied] = useState<string | null>(null)
+
+  useEffect(() => { setOrigin(window.location.origin) }, [])
+
+  const respondUrl = `${origin}/surveys/${surveyId}/respond`
+  const embedCode  = `<iframe src="${respondUrl}" width="100%" height="680" frameborder="0" allow="clipboard-write"></iframe>`
+  const mailtoLink = `mailto:?subject=${encodeURIComponent(`Please take our survey: ${surveyTitle}`)}&body=${encodeURIComponent(`Hi,\n\nWe'd love your feedback. Please take a few minutes to fill out our survey:\n\n${respondUrl}\n\nThank you!`)}`
+
+  const copy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const isLive = status === 'active'
+
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
+      <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Share & Distribute</h2>
+      <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 20 }}>
+        {isLive ? 'Your survey is live — share the link below to start collecting responses.' : 'Publish your survey first to enable distribution.'}
+      </div>
+
+      {!isLive && (
+        <button className="btn" onClick={onPublish} style={{ marginBottom: 20 }}>
+          Publish Survey to Enable Sharing
+        </button>
+      )}
+
+      {/* Shareable link */}
+      <Section title="🔗 Shareable link" desc="Send this URL directly to respondents.">
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            readOnly
+            value={isLive ? respondUrl : '— publish first —'}
+            style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 8, padding: '9px 12px', fontSize: 13, fontFamily: 'monospace', background: isLive ? 'white' : 'var(--bg)', color: isLive ? 'var(--text)' : 'var(--grey)', outline: 'none' }}
+            onFocus={e => e.target.select()}
+          />
+          <button className="btn secondary" disabled={!isLive} onClick={() => copy(respondUrl, 'link')} style={{ flexShrink: 0 }}>
+            {copied === 'link' ? '✓ Copied!' : 'Copy Link'}
+          </button>
+          {isLive && (
+            <a href={respondUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', padding: '0 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', color: 'var(--text)', fontSize: 13, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+              Open ↗
+            </a>
+          )}
+        </div>
+      </Section>
+
+      {/* Embed */}
+      <Section title="</> Embed on your site" desc="Paste this into any webpage to embed the survey inline.">
+        <textarea
+          readOnly
+          value={isLive ? embedCode : '— publish first —'}
+          rows={3}
+          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 12px', fontSize: 12, fontFamily: 'monospace', resize: 'vertical', background: isLive ? 'white' : 'var(--bg)', color: isLive ? 'var(--text)' : 'var(--grey)', outline: 'none' }}
+          onFocus={e => e.target.select()}
+        />
+        <button className="btn secondary" disabled={!isLive} onClick={() => copy(embedCode, 'embed')} style={{ marginTop: 8 }}>
+          {copied === 'embed' ? '✓ Copied!' : 'Copy Embed Code'}
+        </button>
+      </Section>
+
+      {/* Email invite */}
+      <Section title="✉️ Email invite" desc="Opens your email client with the survey link pre-filled.">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <a
+            href={isLive ? mailtoLink : '#'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', padding: '9px 18px', borderRadius: 8,
+              border: '1px solid var(--accent)', color: isLive ? 'var(--accent)' : 'var(--grey)',
+              fontWeight: 600, fontSize: 14, textDecoration: 'none',
+              background: 'white', pointerEvents: isLive ? 'auto' : 'none', opacity: isLive ? 1 : 0.5,
+            }}
+          >
+            Open Email Client
+          </a>
+          <span style={{ fontSize: 12, color: 'var(--grey)' }}>or copy the link above and paste into any email tool</span>
+        </div>
+      </Section>
+
+      {/* QR Code */}
+      <Section title="📱 QR Code" desc="Download or screenshot for print materials, slides, or events.">
+        {isLive ? (
+          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(respondUrl)}`}
+              alt="Survey QR Code"
+              width={140}
+              height={140}
+              style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 6, background: 'white' }}
+            />
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--grey)', marginBottom: 10 }}>Right-click the QR code to save it, or screenshot it for use in presentations and print materials.</div>
+              <div style={{ fontSize: 12, color: 'var(--grey)', fontFamily: 'monospace', wordBreak: 'break-all', background: 'var(--bg)', padding: '6px 10px', borderRadius: 6 }}>{respondUrl}</div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--grey)' }}>Publish the survey to generate a QR code.</div>
+        )}
+      </Section>
+    </div>
+  )
+}
+
+function Section({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 20, marginBottom: 20 }}>
+      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>{title}</div>
+      <div style={{ fontSize: 12, color: 'var(--grey)', marginBottom: 12 }}>{desc}</div>
+      {children}
+    </div>
+  )
+}
 
 function StatTile({ color, num, label }: { color: 'blue' | 'green' | 'purple'; num: string; label: string }) {
   const colors = {
