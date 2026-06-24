@@ -335,7 +335,11 @@ export default function InsightsTab({ surveyId }: { surveyId: string }) {
                         const s = STATUS_STYLE[r.status] ?? STATUS_STYLE.partial
                         const isSelected = selected.has(r.id)
                         return (
-                          <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: isSelected ? '#F5F7FF' : 'transparent' }}>
+                          <tr key={r.id} style={{
+                            borderBottom: '1px solid var(--border)',
+                            background: isSelected ? '#F5F7FF' : r.status === 'disqualified' ? '#FDF5F5' : 'transparent',
+                            opacity: r.status === 'disqualified' ? 0.6 : 1,
+                          }}>
                             <td style={{ padding: '8px 10px' }}>
                               <input type="checkbox" checked={isSelected}
                                 onChange={e => {
