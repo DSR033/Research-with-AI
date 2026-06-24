@@ -56,6 +56,7 @@ export default function SurveyBuilder() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [published, setPublished] = useState(false)
+  const [republished, setRepublished] = useState(false)
   const [results, setResults] = useState<{ total: number; complete: number; partial: number } | null>(null)
 
   // Build tab state
@@ -99,6 +100,15 @@ export default function SurveyBuilder() {
     await updateSurvey(id, { status: 'active' })
     setSurvey(prev => prev ? { ...prev, status: 'active' } : prev)
     setPublished(true)
+  }
+
+  const handleRepublish = async () => {
+    setSaving(true)
+    await updateSurvey(id, { title: survey?.title, status: 'active' })
+    setSurvey(prev => prev ? { ...prev, status: 'active' } : prev)
+    setSaving(false)
+    setRepublished(true)
+    setTimeout(() => setRepublished(false), 3000)
   }
 
   const addQuestion = async (type: string) => {
@@ -173,14 +183,29 @@ export default function SurveyBuilder() {
               {survey.title}
             </h1>
             <div style={{ color: 'var(--grey)', fontSize: 12 }}>
-              Survey ID: SRV-{id.slice(0, 8).toUpperCase()} · {survey.status === 'active' ? 'Live' : 'Draft'} · {survey.mode}
+              Survey ID: SRV-{id.slice(0, 8).toUpperCase()} ·{' '}
+              <span style={{ color: survey.status === 'active' ? 'var(--green)' : 'var(--amber)', fontWeight: 600 }}>
+                {survey.status === 'active' ? '● Live' : '● Draft'}
+              </span>
+              {' '}· {survey.mode}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn ghost" onClick={saveDraft} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>
-            <button className="btn" onClick={handlePublish} disabled={survey.status === 'active'}>
-              {survey.status === 'active' ? '✓ Published' : 'Publish Survey'}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {republished && (
+              <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600 }}>✓ Changes live</span>
+            )}
+            <button className="btn ghost" onClick={saveDraft} disabled={saving}>
+              {saving ? 'Saving…' : 'Save Draft'}
             </button>
+            {survey.status === 'active' ? (
+              <button className="btn" onClick={handleRepublish} disabled={saving}>
+                {saving ? 'Publishing…' : '↑ Republish'}
+              </button>
+            ) : (
+              <button className="btn" onClick={handlePublish}>
+                Publish Survey
+              </button>
+            )}
           </div>
         </div>
 

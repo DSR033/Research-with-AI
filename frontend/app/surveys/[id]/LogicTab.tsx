@@ -50,11 +50,16 @@ function needsTarget(action: Action): boolean {
 }
 
 // ── blank rule factory ────────────────────────────────────────────────────────
+function isMultiTarget(action: Action): boolean {
+  return action === 'hide' || action === 'show_only'
+}
+
 function blankRule(surveyId: string, sourceId: string): Omit<LogicRule, 'id'> {
   return {
     survey_id: surveyId,
     source_question: sourceId,
     target_question: null,
+    target_questions: [],
     condition: { type: 'simple', question_id: sourceId, operator: 'equals', value: '' },
     action: 'skip_to',
     position: 0,
@@ -124,7 +129,11 @@ function RuleEditor({
     setDraft(d => ({ ...d, condition: { ...first, type: 'simple' } }))
   }
 
-  const canSave = draft.action && (draft.action === 'end_survey' || draft.target_question)
+  const canSave = draft.action && (
+    draft.action === 'end_survey' ||
+    (draft.action === 'skip_to' && draft.target_question) ||
+    (isMultiTarget(draft.action) && (draft.target_questions ?? []).length > 0)
+  )
 
   return (
     <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: 18, marginBottom: 12 }}>
@@ -189,16 +198,22 @@ function RuleEditor({
       {/* Action section */}
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--grey)', textTransform: 'uppercase', marginBottom: 10 }}>Then</div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <select
             value={draft.action ?? 'skip_to'}
-            onChange={e => setDraft(d => ({ ...d, action: e.target.value as Action, target_question: e.target.value === 'end_survey' ? null : d.target_question }))}
+            onChange={e => setDraft(d => ({
+              ...d,
+              action: e.target.value as Action,
+              target_question: e.target.value === 'end_survey' ? null : d.target_question,
+              target_questions: e.target.value === 'end_survey' ? [] : (d.target_questions ?? []),
+            }))}
             style={selStyle}
           >
             {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
           </select>
 
-          {needsTarget(draft.action ?? 'skip_to') && (
+          {/* skip_to: single dropdown */}
+          {draft.action === 'skip_to' && (
             <select
               value={draft.target_question ?? ''}
               onChange={e => setDraft(d => ({ ...d, target_question: e.target.value || null }))}
@@ -209,6 +224,37 @@ function RuleEditor({
                 <option key={q.id} value={q.id}>Q{i + 1}: {q.title.slice(0, 40)}</option>
               ))}
             </select>
+          )}
+
+          {/* hide / show_only: multi-select checkboxes */}
+          {isMultiTarget(draft.action ?? 'skip_to') && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--grey)', marginBottom: 2 }}>Select questions:</div>
+              {questions.map((q, i) => {
+                const checked = (draft.target_questions ?? []).includes(q.id)
+                return (
+                  <label key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => {
+                        const prev = draft.target_questions ?? []
+                        setDraft(d => ({
+                          ...d,
+                          target_questions: e.target.checked
+                            ? [...prev, q.id]
+                            : prev.filter(id => id !== q.id),
+                        }))
+                      }}
+                    />
+                    Q{i + 1}: {q.title.slice(0, 45)}{q.title.length > 45 ? '…' : ''}
+                  </label>
+                )
+              })}
+              {(draft.target_questions ?? []).length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--amber)' }}>Select at least one question</div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -292,10 +338,20 @@ function RuleCard({ rule, questions, onEdit }: { rule: LogicRule; questions: Que
 
   function describeAction(): string {
     if (rule.action === 'end_survey') return 'end the survey'
-    const tq = questions.find(q => q.id === rule.target_question)
-    const tLabel = tq ? `Q${questions.indexOf(tq) + 1}: "${tq.title.slice(0, 30)}"` : '?'
     const a = ACTIONS.find(a => a.value === rule.action)?.label ?? rule.action
-    return `${a} ${tLabel}`
+    if (rule.action === 'skip_to') {
+      const tq = questions.find(q => q.id === rule.target_question)
+      const tLabel = tq ? `Q${questions.indexOf(tq) + 1}: "${tq.title.slice(0, 25)}"` : '?'
+      return `${a} ${tLabel}`
+    }
+    // hide / show_only: multi-target
+    const tqIds = (rule.target_questions ?? []).length > 0 ? rule.target_questions : (rule.target_question ? [rule.target_question] : [])
+    if (!tqIds.length) return `${a} (no targets)`
+    const labels = tqIds.map(id => {
+      const q = questions.find(q => q.id === id)
+      return q ? `Q${questions.indexOf(q) + 1}` : '?'
+    }).join(', ')
+    return `${a}: ${labels}`
   }
 
   return (
