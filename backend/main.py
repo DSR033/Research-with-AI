@@ -170,6 +170,33 @@ def get_results(survey_id: str):
     }
 
 
+# ─── Logic Rules ─────────────────────────────────────────────────────────────
+
+@app.get("/surveys/{survey_id}/logic")
+def list_logic(survey_id: str):
+    result = supabase.table("survey_logic").select("*").eq("survey_id", survey_id).order("position").execute()
+    return result.data
+
+
+@app.post("/surveys/{survey_id}/logic")
+def create_logic(survey_id: str, payload: dict):
+    payload["survey_id"] = survey_id
+    result = supabase.table("survey_logic").insert(payload).execute()
+    return result.data[0]
+
+
+@app.put("/surveys/{survey_id}/logic/{rule_id}")
+def update_logic(survey_id: str, rule_id: str, payload: dict):
+    result = supabase.table("survey_logic").update(payload).eq("id", rule_id).eq("survey_id", survey_id).execute()
+    return result.data[0]
+
+
+@app.delete("/surveys/{survey_id}/logic/{rule_id}")
+def delete_logic(survey_id: str, rule_id: str):
+    supabase.table("survey_logic").delete().eq("id", rule_id).eq("survey_id", survey_id).execute()
+    return {"deleted": rule_id}
+
+
 # ─── Responses (detail, update, delete) ──────────────────────────────────────
 
 @app.get("/surveys/{survey_id}/responses-full")

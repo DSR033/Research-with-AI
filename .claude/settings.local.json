@@ -43,7 +43,10 @@
       "Bash(curl -s \"http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c/export.csv\" -v)",
       "Bash(venv/bin/python3 -c ' *)",
       "Bash(curl -s \"http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c/responses-full\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c/logic -H 'Content-Type: application/json' -d '{\"source_question\":\"c7553b23-dc74-44a3-8dc8-57ab62766750\",\"target_question\":\"318c1317-3b53-409d-8d8c-d0ddd4356c7a\",\"condition\":{\"type\":\"simple\",\"question_id\":\"c7553b23-dc74-44a3-8dc8-57ab62766750\",\"operator\":\"greater_equal\",\"value\":\"8\"},\"action\":\"skip_to\",\"position\":0}')",
+      "Bash(curl -v -X POST http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c/logic -H 'Content-Type: application/json' -d '{\"source_question\":\"c7553b23-dc74-44a3-8dc8-57ab62766750\",\"target_question\":\"318c1317-3b53-409d-8d8c-d0ddd4356c7a\",\"condition\":{\"type\":\"simple\",\"question_id\":\"c7553b23-dc74-44a3-8dc8-57ab62766750\",\"operator\":\"greater_equal\",\"value\":\"8\"},\"action\":\"skip_to\",\"position\":0}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Rule created:', d['id'][:8], '|', d['action']\\)\")"
     ]
   }
 }

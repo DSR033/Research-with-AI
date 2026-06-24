@@ -4,6 +4,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { getSurvey, updateSurvey, createQuestion, getResults } from '../../../lib/api'
 import TopBar from '../../../components/TopBar'
 import InsightsTab from './InsightsTab'
+import LogicTab from './LogicTab'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -66,8 +67,7 @@ export default function SurveyBuilder() {
   const [closeDate, setCloseDate] = useState('')
   const [responseLimit, setResponseLimit] = useState('')
 
-  // Logic tab state
-  const [logicSubtab, setLogicSubtab] = useState('skip')
+  // Logic tab state (managed by LogicTab component)
 
   useEffect(() => {
     getSurvey(id).then(data => {
@@ -287,75 +287,7 @@ export default function SurveyBuilder() {
 
         {/* ── LOGIC TAB ── */}
         {activeTab === 'logic' && (
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
-            <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>Logic & Flow Control</h2>
-            <div style={{ fontSize: 12.5, color: 'var(--grey)', marginBottom: 18 }}>Set up conditional logic and branching based on responses.</div>
-
-            <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--border)' }}>
-              {['skip', 'compound', 'showq', 'showo'].map(sub => (
-                <div
-                  key={sub}
-                  onClick={() => setLogicSubtab(sub)}
-                  style={{ fontSize: 13, fontWeight: 600, padding: '8px 4px', marginRight: 22, cursor: 'pointer', color: logicSubtab === sub ? 'var(--accent)' : 'var(--grey)', borderBottom: `2px solid ${logicSubtab === sub ? 'var(--accent)' : 'transparent'}` }}
-                >
-                  {sub === 'skip' ? 'Skip Logic' : sub === 'compound' ? 'Compound Logic' : sub === 'showq' ? 'Show/Hide Questions' : 'Show/Hide Options'}
-                </div>
-              ))}
-            </div>
-
-            {logicSubtab === 'skip' && (
-              <div>
-                <div style={{ color: 'var(--grey)', fontSize: 13, marginBottom: 12 }}>Simple per-question skip rules, set from each question in the Build tab.</div>
-                {questions.filter(q => q.logicOn).length === 0 ? (
-                  <div style={{ color: 'var(--grey)', fontSize: 13, padding: '16px 0' }}>No skip logic rules set yet. Enable them per-question in the Build tab.</div>
-                ) : questions.filter(q => q.logicOn).map(q => (
-                  <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 10 }}>🔀 {q.title.slice(0, 40)} → if &quot;No&quot;, skip to next</div>
-                    <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
-                      If <strong style={{ color: 'var(--accent-dark)' }}>{q.title.slice(0, 30)}…</strong> equals <strong style={{ color: 'var(--accent-dark)' }}>&quot;No&quot;</strong> → jump to next question
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {logicSubtab === 'compound' && (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                  <div style={{ color: 'var(--grey)', fontSize: 13 }}>Create complex conditions using multiple filters and named variables.</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn ghost">⚛ Create Variable</button>
-                    <button className="btn purple">+ Add Compound Logic</button>
-                  </div>
-                </div>
-                <div style={{ background: '#EEF2FF', border: '1px solid #D7E0FF', borderRadius: 10, padding: '14px 16px', marginBottom: 18 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--accent-dark)', marginBottom: 8 }}>⚛ Available Variables</div>
-                  {['$user_segment', '$satisfaction_score', '$product_usage'].map(v => (
-                    <span key={v} style={{ display: 'inline-block', fontSize: 12, fontFamily: 'monospace', background: 'white', border: '1px solid #C7D3FF', color: 'var(--accent-dark)', padding: '4px 10px', borderRadius: 20, margin: '0 6px 6px 0' }}>{v}</span>
-                  ))}
-                </div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 10 }}>🔻 Rule #1: Premium User Pathway</div>
-                  <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
-                    <div style={{ fontWeight: 600, color: 'var(--grey)', fontSize: 11.5, textTransform: 'uppercase', marginBottom: 4 }}>Conditions (ALL must be true)</div>
-                    <div style={{ padding: '5px 0' }}>▽ <strong style={{ color: 'var(--accent-dark)' }}>Subscription Type</strong> equals <strong style={{ color: 'var(--accent-dark)' }}>&quot;Premium&quot;</strong></div>
-                    <div style={{ padding: '5px 0' }}>▽ Variable: <strong style={{ color: 'var(--accent-dark)' }}>$satisfaction_score</strong> greater than <strong style={{ color: 'var(--accent-dark)' }}>8</strong></div>
-                  </div>
-                  <div style={{ background: '#F1E9F7', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginTop: 8, color: '#5A3A78', fontWeight: 600 }}>
-                    THEN → Route to &quot;Power User&quot; follow-up branch
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {(logicSubtab === 'showq' || logicSubtab === 'showo') && (
-              <div style={{ color: 'var(--grey)', fontSize: 13 }}>
-                {logicSubtab === 'showq'
-                  ? 'Show or hide entire questions based on prior answers — configure per question from the Build tab.'
-                  : 'Show or hide individual answer options dynamically based on earlier responses or variables.'}
-              </div>
-            )}
-          </div>
+          <LogicTab surveyId={id} questions={questions} />
         )}
 
         {/* ── CONFIGURATION TAB ── */}

@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import { visibleQuestions, nextQuestion } from '../../../../lib/logic-engine'
+import type { LogicRule } from '../../../../lib/logic-engine'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -53,21 +55,24 @@ export default function RespondPage() {
 
   const [survey, setSurvey] = useState<Survey | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
+  const [logicRules, setLogicRules] = useState<LogicRule[]>([])
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<'classic' | 'conversational'>('conversational')
 
   useEffect(() => {
-    fetch(`${API}/surveys/${id}`)
-      .then(r => r.json())
-      .then(data => {
-        setSurvey(data)
-        const qs = (data.questions || []).sort(
-          (a: Question, b: Question) => a.position - b.position
-        )
-        setQuestions(qs)
-        setMode(data.mode === 'conversational' ? 'conversational' : 'classic')
-        setLoading(false)
-      })
+    Promise.all([
+      fetch(`${API}/surveys/${id}`).then(r => r.json()),
+      fetch(`${API}/surveys/${id}/logic`).then(r => r.json()).catch(() => []),
+    ]).then(([data, rules]) => {
+      setSurvey(data)
+      const qs = (data.questions || []).sort(
+        (a: Question, b: Question) => a.position - b.position
+      )
+      setQuestions(qs)
+      setLogicRules(rules ?? [])
+      setMode(data.mode === 'conversational' ? 'conversational' : 'classic')
+      setLoading(false)
+    })
   }, [id])
 
   if (loading) {
@@ -98,18 +103,19 @@ export default function RespondPage() {
   }
 
   if (mode === 'conversational') {
-    return <ConversationalMode survey={survey} questions={questions} />
+    return <ConversationalMode survey={survey} questions={questions} rules={logicRules} />
   }
-  return <ClassicMode survey={survey} questions={questions} />
+  return <ClassicMode survey={survey} questions={questions} rules={logicRules} />
 }
 
 // ─── CONVERSATIONAL MODE ──────────────────────────────────────────────────────
-function ConversationalMode({ survey, questions }: { survey: Survey; questions: Question[] }) {
+function ConversationalMode({ survey, questions, rules }: { survey: Survey; questions: Question[]; rules: LogicRule[] }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [qIndex, setQIndex] = useState(-1) // -1 = not started yet
   const [inputDisabled, setInputDisabled] = useState(false)
   const [done, setDone] = useState(false)
   const [answers, setAnswers] = useState<Answer[]>([])
+  const [answerMap, setAnswerMap] = useState<Record<string, string>>({})
   const [starHover, setStarHover] = useState(0)
   const [textVal, setTextVal] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -163,17 +169,27 @@ function ConversationalMode({ survey, questions }: { survey: Survey; questions: 
         ? { choice: value }
         : { text: value },
     }
-    setAnswers(prev => [...prev, answer])
+    const newAnswers = [...answers, answer]
+    setAnswers(newAnswers)
 
-    const next = qIndex + 1
-    if (next >= questions.length) {
-      finishSurvey([...answers, answer])
-    } else {
-      showTypingThen(() => {
-        addMsg(questions[next].title, 'bot')
-        setQIndex(next)
-      })
+    // Build flat answer map for the logic engine
+    const newMap = { ...answerMap, [q.id]: value }
+    setAnswerMap(newMap)
+
+    // Use logic engine to find next question
+    const nextId = nextQuestion(questions, rules, newMap, q.id)
+    if (nextId === null) {
+      finishSurvey(newAnswers)
+      return
     }
+    const nextQ = questions.find(qi => qi.id === nextId)
+    if (!nextQ) { finishSurvey(newAnswers); return }
+    const nextIdx = questions.indexOf(nextQ)
+
+    showTypingThen(() => {
+      addMsg(nextQ.title, 'bot')
+      setQIndex(nextIdx)
+    })
   }
 
 
@@ -376,10 +392,20 @@ function TypingBubble() {
 }
 
 // ─── CLASSIC MODE ─────────────────────────────────────────────────────────────
-function ClassicMode({ survey, questions }: { survey: Survey; questions: Question[] }) {
+function ClassicMode({ survey, questions, rules }: { survey: Survey; questions: Question[]; rules: LogicRule[] }) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  // Flat string map for logic engine (single-value only; multi-select joins with ", ")
+  const flatAnswers: Record<string, string> = {}
+  for (const [qid, val] of Object.entries(answers)) {
+    flatAnswers[qid] = Array.isArray(val) ? val.join(', ') : (val ?? '')
+  }
+
+  // Visible questions after logic evaluation
+  const visibleIds = new Set(visibleQuestions(questions, rules, flatAnswers))
+  const displayQuestions = questions.filter(q => visibleIds.has(q.id))
 
   const setValue = (qid: string, val: string | string[]) =>
     setAnswers(prev => ({ ...prev, [qid]: val }))
@@ -426,7 +452,7 @@ function ClassicMode({ survey, questions }: { survey: Survey; questions: Questio
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {questions.map((q, i) => (
+          {displayQuestions.map((q, i) => (
             <ClassicQuestion key={q.id} q={q} index={i} value={answers[q.id]} onChange={val => setValue(q.id, val)} />
           ))}
         </div>
