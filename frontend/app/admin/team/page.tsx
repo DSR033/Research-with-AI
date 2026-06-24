@@ -35,6 +35,7 @@ export default function TeamPage() {
   const [editingRole, setEditingRole] = useState<string | null>(null)
 
   const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return
@@ -52,17 +53,20 @@ export default function TeamPage() {
         setInviting(false)
         return
       }
-      const name = inviteEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      const sentEmail = inviteEmail.trim()
+      const name = sentEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       setMembers(prev => [...prev, {
         id: String(Date.now()),
         name,
-        email: inviteEmail.trim(),
+        email: sentEmail,
         role: inviteRole,
-        joined: 'Invite sent ✓',
+        joined: '📩 Invite pending',
         avatar: name[0]?.toUpperCase() ?? '?',
       }])
       setInviteEmail('')
       setShowInvite(false)
+      setInviteSuccess(`Invite sent to ${sentEmail} — they'll receive a magic-link email to join.`)
+      setTimeout(() => setInviteSuccess(null), 6000)
     } catch {
       setInviteError('Network error — is the backend running?')
     }
@@ -81,13 +85,20 @@ export default function TeamPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: inviteSuccess ? 16 : 28 }}>
         <div>
           <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>Team & Roles</h1>
           <div style={{ color: 'var(--grey)', fontSize: 13 }}>Manage who has access to your workspace and what they can do.</div>
         </div>
-        <button className="btn" onClick={() => setShowInvite(true)}>+ Invite Member</button>
+        <button className="btn" onClick={() => { setShowInvite(true); setInviteError(null) }}>+ Invite Member</button>
       </div>
+
+      {inviteSuccess && (
+        <div style={{ padding: '12px 16px', background: 'var(--green-bg)', color: 'var(--green)', borderRadius: 10, fontSize: 13, fontWeight: 600, marginBottom: 24, display: 'flex', justifyContent: 'space-between' }}>
+          ✓ {inviteSuccess}
+          <span onClick={() => setInviteSuccess(null)} style={{ cursor: 'pointer', opacity: 0.6, fontWeight: 400 }}>✕</span>
+        </div>
+      )}
 
       {/* Role guide */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, marginBottom: 24 }}>
@@ -118,7 +129,21 @@ export default function TeamPage() {
             </div>
             <div style={{ fontSize: 13, color: 'var(--grey)' }}>{m.email}</div>
             <div style={{ position: 'relative' }}>
-              {m.role === 'owner' ? (
+              {m.joined.startsWith('📩') ? (
+                <button
+                  onClick={async () => {
+                    await fetch(`${API}/admin/invite`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email: m.email, role: m.role }),
+                    })
+                    setInviteSuccess(`Invite resent to ${m.email}`)
+                    setTimeout(() => setInviteSuccess(null), 4000)
+                  }}
+                  style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--amber)', background: 'white', color: 'var(--amber)', cursor: 'pointer' }}
+                >
+                  Resend
+                </button>
+              ) : m.role === 'owner' ? (
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: ROLE_COLOR.owner.bg, color: ROLE_COLOR.owner.text }}>{m.role}</span>
               ) : (
                 <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -145,7 +170,9 @@ export default function TeamPage() {
                 </div>
               )}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--grey)' }}>{m.joined}</div>
+            <div style={{ fontSize: 12, color: m.joined.startsWith('📩') ? 'var(--amber)' : 'var(--grey)', fontWeight: m.joined.startsWith('📩') ? 600 : 400 }}>
+              {m.joined}
+            </div>
           </div>
         ))}
       </div>

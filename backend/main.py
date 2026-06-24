@@ -176,6 +176,8 @@ def invite_user(payload: dict):
     if role not in ("admin", "member", "viewer"):
         raise HTTPException(400, "role must be admin, member, or viewer")
 
+    redirect_to = f"{FRONTEND_URL}/auth/callback?next=/"
+
     resp = httpx.post(
         f"{SUPABASE_URL}/auth/v1/invite",
         headers={
@@ -183,15 +185,25 @@ def invite_user(payload: dict):
             "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
             "Content-Type": "application/json",
         },
-        json={"email": email, "data": {"role": role}},
+        json={
+            "email": email,
+            "data": {"role": role},
+            "redirect_to": redirect_to,
+        },
         timeout=10,
     )
 
     if resp.status_code not in (200, 201):
-        detail = resp.json().get("msg") or resp.json().get("error_description") or resp.text
+        body = resp.json()
+        detail = (
+            body.get("msg")
+            or body.get("error_description")
+            or body.get("error")
+            or resp.text
+        )
         raise HTTPException(resp.status_code, detail)
 
-    return {"invited": email, "role": role}
+    return {"invited": email, "role": role, "redirect_to": redirect_to}
 
 
 # ─── Templates ────────────────────────────────────────────────────────────────
