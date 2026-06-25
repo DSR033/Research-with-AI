@@ -274,7 +274,7 @@ function ConversationalMode({ survey, questions, rules }: { survey: Survey; ques
   const currentQ = qIndex >= 0 && qIndex < questions.length ? questions[qIndex] : null
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg)', padding: 24 }}>
+    <div className="respondent-wrapper" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg)', padding: 24 }}>
       {/* Phone frame */}
       <div className="respondent-phone" style={{ width: 420, height: 760, background: 'var(--card)', borderRadius: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border)' }}>
 

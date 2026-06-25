@@ -39,7 +39,7 @@ export default function Dashboard() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <TopBar activeLabel="Surveys" />
 
-      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '32px 24px' }}>
+      <div className="page-container" style={{ maxWidth: 1120, margin: '0 auto', padding: '32px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
             <h1 style={{ fontSize: 22, margin: '0 0 4px' }}>Surveys</h1>
@@ -119,7 +119,7 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (ti
         </div>
 
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Survey Method <span style={{ color: 'var(--red)' }}>*</span></div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <div className="methods-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
           {METHODS.map(m => (
             <div
               key={m.id}

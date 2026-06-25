@@ -47,50 +47,67 @@ body {
 
 /* ── Mobile responsiveness ── */
 @media (max-width: 768px) {
-  /* Topbar: hide secondary nav, keep logo + avatar */
+
+  /* ── TopBar ── */
   .topbar-nav { display: none !important; }
   .topbar-inner { padding: 10px 16px !important; }
 
-  /* Dashboard grid → single column */
+  /* ── Page containers ── */
+  .page-container { padding: 16px !important; }
+
+  /* ── Dashboard ── */
   .survey-grid { grid-template-columns: 1fr !important; }
 
-  /* Builder: full width panels */
+  /* ── Builder ── */
+  .builder-tabs {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    flex-wrap: nowrap !important;
+  }
+  .builder-tabs::-webkit-scrollbar { display: none; }
   .builder-layout { flex-direction: column !important; }
   .builder-qtypes { width: 100% !important; }
 
-  /* Builder tabs: scrollable */
-  .builder-tabs { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
-  .builder-tabs > div { display: inline-flex !important; }
-
-  /* Admin: hide sidebar, full width content */
-  .admin-sidebar { display: none !important; }
-  .admin-content { padding: 16px !important; }
-
-  /* Templates: 1 column */
-  .templates-grid { grid-template-columns: 1fr !important; }
-
-  /* Respondent: full screen on mobile */
+  /* ── Respondent: true full-screen ── */
+  .respondent-wrapper {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
   .respondent-phone {
     width: 100% !important;
     height: 100dvh !important;
+    min-height: 100dvh !important;
     border-radius: 0 !important;
     border: none !important;
     box-shadow: none !important;
   }
 
-  /* Plan cards: stack */
+  /* ── Admin ── */
+  .admin-sidebar { display: none !important; }
+  .admin-content { padding: 16px !important; }
+  .admin-mobile-nav { display: flex !important; }
+
+  /* ── Templates ── */
+  .templates-grid { grid-template-columns: 1fr !important; }
+
+  /* ── Billing plan cards ── */
   .plan-cards { grid-template-columns: 1fr !important; }
 
-  /* Insights stat grid */
+  /* ── Insights / stats ── */
   .stat-grid-4 { grid-template-columns: 1fr 1fr !important; }
 
-  /* Analysis dashboard: single column */
-  .analysis-twocol { grid-template-columns: 1fr !important; }
+  /* ── Create survey modal methods grid ── */
+  .methods-grid { grid-template-columns: 1fr 1fr !important; }
 
-  /* Share tab inputs */
-  .share-row { flex-direction: column !important; align-items: stretch !important; }
-  .share-row a, .share-row button { text-align: center; justify-content: center; }
+  /* ── Share tab ── */
+  .share-actions { flex-direction: column !important; }
+  .share-actions a, .share-actions button { width: 100% !important; justify-content: center !important; }
 
-  /* Generic page padding */
-  .page-container { padding: 16px !important; }
+  /* ── Generic two-column → single ── */
+  .two-col { grid-template-columns: 1fr !important; }
+
+  /* ── Smaller headings ── */
+  h1 { font-size: 18px !important; }
 }

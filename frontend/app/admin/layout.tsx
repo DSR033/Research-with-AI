@@ -67,6 +67,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <TopBar activeLabel="Admin" />
 
+      {/* Mobile nav — horizontal scrollable tabs, hidden on desktop via CSS */}
+      <div className="admin-mobile-nav" style={{
+        display: 'none', overflowX: 'auto' as const, borderBottom: '1px solid var(--border)',
+        background: 'var(--card)', padding: '0 16px', gap: 0,
+        scrollbarWidth: 'none' as const,
+      }}>
+        {NAV.map(n => (
+          <div key={n.href} onClick={() => router.push(n.href)} style={{
+            padding: '12px 16px', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+            borderBottom: `2px solid ${pathname === n.href ? 'var(--accent)' : 'transparent'}`,
+            color: pathname === n.href ? 'var(--accent)' : 'var(--grey)', cursor: 'pointer', flexShrink: 0,
+          }}>
+            {n.icon} {n.label}
+          </div>
+        ))}
+      </div>
+
       <div style={{ display: 'flex', maxWidth: 1120, margin: '0 auto', padding: '32px 24px', gap: 28 }}>
         {/* Sidebar */}
         <div className="admin-sidebar" style={{ width: 210, flexShrink: 0 }}>
