@@ -100,12 +100,15 @@ export default function RespondPage() {
   const [logicRules, setLogicRules] = useState<LogicRule[]>([])
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<'classic' | 'conversational'>('conversational')
+  const [branding, setBranding] = useState({ brand_color: '#2E5BFF', logo_url: null as string | null, org_name: 'SurveyAI' })
 
   useEffect(() => {
     Promise.all([
       fetch(`${API}/surveys/${id}`).then(r => r.json()),
       fetch(`${API}/surveys/${id}/logic`).then(r => r.json()).catch(() => []),
-    ]).then(([data, rules]) => {
+      fetch(`${API}/surveys/${id}/branding`).then(r => r.json()).catch(() => null),
+    ]).then(([data, rules, brand]) => {
+      if (brand) setBranding(brand)
       setSurvey(data)
       let qs: Question[] = (data.questions || []).sort(
         (a: Question, b: Question) => a.position - b.position
@@ -157,13 +160,15 @@ export default function RespondPage() {
   }
 
   if (mode === 'conversational') {
-    return <ConversationalMode survey={survey} questions={questions} rules={logicRules} />
+    return <ConversationalMode survey={survey} questions={questions} rules={logicRules} branding={branding} />
   }
-  return <ClassicMode survey={survey} questions={questions} rules={logicRules} />
+  return <ClassicMode survey={survey} questions={questions} rules={logicRules} branding={branding} />
 }
 
 // ─── CONVERSATIONAL MODE ──────────────────────────────────────────────────────
-function ConversationalMode({ survey, questions, rules }: { survey: Survey; questions: Question[]; rules: LogicRule[] }) {
+interface Branding { brand_color: string; logo_url: string | null; org_name: string }
+
+function ConversationalMode({ survey, questions, rules, branding }: { survey: Survey; questions: Question[]; rules: LogicRule[]; branding: Branding }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [qIndex, setQIndex] = useState(-1) // -1 = not started yet
   const [inputDisabled, setInputDisabled] = useState(false)
@@ -280,7 +285,12 @@ function ConversationalMode({ survey, questions, rules }: { survey: Survey; ques
 
         {/* Header */}
         <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>S</div>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: branding.brand_color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, overflow: 'hidden', flexShrink: 0 }}>
+            {branding.logo_url
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={branding.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              : (branding.org_name?.[0] ?? 'S').toUpperCase()}
+          </div>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{survey.title}</div>
           <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--grey)' }}>
             {qIndex < 0 ? '' : `Q${Math.min(qIndex + 1, questions.length)} of ${questions.length}`}
@@ -289,7 +299,7 @@ function ConversationalMode({ survey, questions, rules }: { survey: Survey; ques
 
         {/* Progress bar */}
         <div style={{ height: 3, background: 'var(--border)' }}>
-          <div style={{ height: '100%', background: 'var(--accent)', width: `${progress}%`, transition: 'width .3s' }} />
+          <div style={{ height: '100%', background: branding.brand_color, width: `${progress}%`, transition: 'width .3s' }} />
         </div>
 
         {/* Messages */}
@@ -311,7 +321,7 @@ function ConversationalMode({ survey, questions, rules }: { survey: Survey; ques
                 {m.text}
               </div>
             ) : (
-              <div key={m.id} style={{ maxWidth: '82%', padding: '10px 14px', borderRadius: 14, fontSize: 14, lineHeight: 1.4, background: 'var(--accent)', color: 'white', alignSelf: 'flex-end', borderBottomRightRadius: 4 }}>
+              <div key={m.id} style={{ maxWidth: '82%', padding: '10px 14px', borderRadius: 14, fontSize: 14, lineHeight: 1.4, background: branding.brand_color, color: 'white', alignSelf: 'flex-end', borderBottomRightRadius: 4 }}>
                 {m.text}
               </div>
             )
@@ -454,7 +464,7 @@ function TypingBubble() {
 }
 
 // ─── CLASSIC MODE ─────────────────────────────────────────────────────────────
-function ClassicMode({ survey, questions, rules }: { survey: Survey; questions: Question[]; rules: LogicRule[] }) {
+function ClassicMode({ survey, questions, rules, branding }: { survey: Survey; questions: Question[]; rules: LogicRule[]; branding: Branding }) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -526,13 +536,20 @@ function ClassicMode({ survey, questions, rules }: { survey: Survey; questions: 
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <div style={{ maxWidth: 640, margin: '0 auto', padding: '40px 24px' }}>
-        <div style={{ marginBottom: 32 }}>
-          <h1 style={{ fontSize: 24, margin: '0 0 8px' }}>{survey.title}</h1>
-          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2 }}>
-            <div style={{ height: '100%', background: 'var(--accent)', width: '0%', borderRadius: 2 }} />
-          </div>
+      {/* Branded header */}
+      <div style={{ background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 7, background: branding.brand_color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, overflow: 'hidden', flexShrink: 0 }}>
+          {branding.logo_url
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={branding.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            : (branding.org_name?.[0] ?? 'S').toUpperCase()}
         </div>
+        <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{survey.title}</div>
+      </div>
+      <div style={{ height: 3, background: branding.brand_color }} />
+
+      <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px' }}>
+        <div style={{ marginBottom: 24 }} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {displayQuestions.map((q, i) => (

@@ -254,6 +254,29 @@ def get_results(survey_id: str):
     }
 
 
+# ─── Branding (public) ───────────────────────────────────────────────────────
+
+@app.get("/surveys/{survey_id}/branding")
+def get_branding(survey_id: str):
+    """Return brand color + logo for the survey owner. Public — no auth required."""
+    survey = supabase.table("surveys").select("created_by").eq("id", survey_id).single().execute().data
+    if not survey or not survey.get("created_by"):
+        return {"brand_color": "#2E5BFF", "logo_url": None, "org_name": "SurveyAI"}
+
+    profile = supabase.table("profiles").select(
+        "brand_color, logo_url, org_name, full_name"
+    ).eq("id", survey["created_by"]).single().execute().data
+
+    if not profile:
+        return {"brand_color": "#2E5BFF", "logo_url": None, "org_name": "SurveyAI"}
+
+    return {
+        "brand_color": profile.get("brand_color") or "#2E5BFF",
+        "logo_url": profile.get("logo_url"),
+        "org_name": profile.get("org_name") or profile.get("full_name") or "SurveyAI",
+    }
+
+
 # ─── Logic Rules ─────────────────────────────────────────────────────────────
 
 @app.get("/surveys/{survey_id}/logic")

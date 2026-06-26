@@ -1,27 +1,67 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '../../../lib/supabase-browser'
 
 export default function SettingsPage() {
-  const [orgName, setOrgName] = useState("Durgesh's Workspace")
-  const [timezone, setTimezone] = useState('Asia/Kolkata')
-  const [domain, setDomain] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [orgName, setOrgName]       = useState('')
+  const [timezone, setTimezone]     = useState('Asia/Kolkata')
+  const [brandColor, setBrandColor] = useState('#2E5BFF')
+  const [logoUrl, setLogoUrl]       = useState('')
+  const [domain, setDomain]         = useState('')
+  const [saving, setSaving]         = useState(false)
+  const [saved, setSaved]           = useState(false)
+  const [loading, setLoading]       = useState(true)
+  const [userId, setUserId]         = useState<string | null>(null)
 
-  const handleSave = () => {
+  const supabase = createClient()
+
+  // Load existing settings
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      setUserId(user.id)
+      const { data } = await supabase
+        .from('profiles')
+        .select('org_name, brand_color, logo_url')
+        .eq('id', user.id)
+        .single()
+      if (data) {
+        setOrgName(data.org_name ?? '')
+        setBrandColor(data.brand_color ?? '#2E5BFF')
+        setLogoUrl(data.logo_url ?? '')
+      }
+      setLoading(false)
+    })
+  }, [])
+
+  const handleSave = async () => {
+    if (!userId) return
     setSaving(true)
-    setTimeout(() => { setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500) }, 800)
+    await supabase.from('profiles').update({
+      org_name: orgName,
+      brand_color: brandColor,
+      logo_url: logoUrl || null,
+    }).eq('id', userId)
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
   }
+
+  if (loading) return <div style={{ color: 'var(--grey)', fontSize: 13, padding: '24px 0' }}>Loading…</div>
 
   return (
     <div>
       <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>Org Settings</h1>
-      <div style={{ color: 'var(--grey)', fontSize: 13, marginBottom: 28 }}>Configure your organisation&apos;s name, branding, and preferences.</div>
+      <div style={{ color: 'var(--grey)', fontSize: 13, marginBottom: 28 }}>
+        Configure your organisation&apos;s name, branding, and preferences.
+        Branding is applied to all your survey respondent pages.
+      </div>
 
       {/* General */}
       <Section title="General">
-        <Field label="Organisation name" hint="Shown to respondents and in reports.">
-          <input value={orgName} onChange={e => setOrgName(e.target.value)} style={inputStyle} />
+        <Field label="Organisation name" hint="Shown to respondents in survey headers.">
+          <input value={orgName} onChange={e => setOrgName(e.target.value)}
+            placeholder="e.g. Acme Corp" style={inputStyle} />
         </Field>
         <Field label="Time zone" hint="Used for response timestamps and scheduled reports.">
           <select value={timezone} onChange={e => setTimezone(e.target.value)} style={inputStyle}>
@@ -34,17 +74,72 @@ export default function SettingsPage() {
 
       {/* Branding */}
       <Section title="Branding">
-        <Field label="Logo" hint="Displayed in survey headers and email invites (PNG or SVG, max 2 MB).">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 10, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 18 }}>S</div>
-            <button className="btn ghost" style={{ fontSize: 13 }}>Upload logo</button>
-            <span style={{ fontSize: 12, color: 'var(--grey)' }}>No logo uploaded yet</span>
+        <Field label="Brand colour" hint="Applied to buttons, progress bars, and accents in your survey pages.">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <input
+              type="color"
+              value={brandColor}
+              onChange={e => setBrandColor(e.target.value)}
+              style={{ width: 44, height: 40, border: '1px solid var(--border)', borderRadius: 8, padding: 3, cursor: 'pointer' }}
+            />
+            <input
+              value={brandColor}
+              onChange={e => setBrandColor(e.target.value)}
+              style={{ ...inputStyle, width: 120, fontFamily: 'monospace' }}
+            />
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: brandColor, flexShrink: 0, border: '1px solid rgba(0,0,0,0.08)' }} />
+            <span style={{ fontSize: 12, color: 'var(--grey)' }}>Live preview</span>
           </div>
         </Field>
-        <Field label="Brand colour" hint="Used for buttons and progress bars in your surveys.">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <input type="color" defaultValue="#2E5BFF" style={{ width: 40, height: 36, border: '1px solid var(--border)', borderRadius: 6, padding: 2, cursor: 'pointer' }} />
-            <input defaultValue="#2E5BFF" style={{ ...inputStyle, width: 110, fontFamily: 'monospace' }} />
+
+        <Field label="Logo URL" hint="Direct link to your logo image (PNG, SVG). Shown in survey headers instead of the default initial.">
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <input
+              value={logoUrl}
+              onChange={e => setLogoUrl(e.target.value)}
+              placeholder="https://yourcompany.com/logo.png"
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            {logoUrl && (
+              <div style={{ width: 44, height: 44, borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={logoUrl} alt="Logo preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--grey)', marginTop: 8 }}>
+            💡 Use a square or horizontal logo. Minimum 80×80px recommended.
+          </div>
+        </Field>
+
+        {/* Branding preview */}
+        <Field label="Respondent preview" hint="How your survey header will look to respondents.">
+          <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', maxWidth: 380 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, background: 'white' }}>
+              {logoUrl ? (
+                <div style={{ width: 30, height: 30, borderRadius: 7, overflow: 'hidden', flexShrink: 0, background: brandColor }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={logoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                </div>
+              ) : (
+                <div style={{ width: 30, height: 30, borderRadius: 7, background: brandColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                  {(orgName || 'S')[0].toUpperCase()}
+                </div>
+              )}
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{orgName || 'Your Survey Title'}</div>
+            </div>
+            <div style={{ height: 3, background: brandColor }} />
+            <div style={{ padding: 14, background: '#F5F7FA' }}>
+              <div style={{ padding: '10px 14px', background: '#F1F4F8', borderRadius: 10, fontSize: 13, marginBottom: 8, display: 'inline-block' }}>
+                Hi! How can we help?
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button style={{ padding: '8px 16px', borderRadius: 8, background: brandColor, color: 'white', border: 'none', fontSize: 12, fontWeight: 600 }}>Option A</button>
+                <button style={{ padding: '8px 16px', borderRadius: 8, background: 'white', color: brandColor, border: `1.5px solid ${brandColor}`, fontSize: 12, fontWeight: 600 }}>Option B</button>
+              </div>
+            </div>
           </div>
         </Field>
       </Section>
@@ -52,16 +147,11 @@ export default function SettingsPage() {
       {/* Custom domain */}
       <Section title="Custom Domain">
         <Field label="Survey domain" hint={<>Point a CNAME to <code style={{ background: 'var(--bg)', padding: '1px 5px', borderRadius: 4, fontSize: 12 }}>surveys.surveyai.app</code> then enter your domain below.</>}>
-          <input
-            value={domain}
-            onChange={e => setDomain(e.target.value)}
-            placeholder="surveys.yourcompany.com"
-            style={inputStyle}
-          />
+          <input value={domain} onChange={e => setDomain(e.target.value)}
+            placeholder="surveys.yourcompany.com" style={inputStyle} />
         </Field>
         <div style={{ fontSize: 12, color: 'var(--grey)', padding: '8px 12px', background: 'var(--amber-bg)', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span>⚠️</span> Custom domain is a Pro plan feature.{' '}
-          <span style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>Upgrade</span>
+          ⚠️ Custom domain is a Pro plan feature. <span style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>Upgrade</span>
         </div>
       </Section>
 
@@ -72,10 +162,10 @@ export default function SettingsPage() {
             <div style={{ fontWeight: 600, fontSize: 13.5 }}>Delete organisation</div>
             <div style={{ fontSize: 12, color: 'var(--grey)', marginTop: 2 }}>Permanently deletes all surveys, responses, and data. Cannot be undone.</div>
           </div>
-          <button
-            onClick={() => alert('Contact support to delete your organisation.')}
-            style={{ background: 'white', color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-          >Delete org</button>
+          <button onClick={() => alert('Contact support to delete your organisation.')}
+            style={{ background: 'white', color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Delete org
+          </button>
         </div>
       </Section>
 
@@ -84,7 +174,7 @@ export default function SettingsPage() {
         <button className="btn" onClick={handleSave} disabled={saving}>
           {saving ? <><span className="spinner" />Saving…</> : 'Save changes'}
         </button>
-        {saved && <span style={{ fontSize: 13, color: 'var(--green)' }}>✓ Saved</span>}
+        {saved && <span style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>✓ Saved — branding is now live on all your surveys</span>}
       </div>
     </div>
   )
