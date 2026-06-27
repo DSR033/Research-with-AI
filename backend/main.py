@@ -224,6 +224,7 @@ def use_template(template_id: str, payload: dict):
         "title": structure.get("title", tmpl["name"]),
         "mode": payload.get("mode", "classic"),
         "status": "draft",
+        "created_by": payload.get("created_by"),
     }).execute().data[0]
 
     for i, q in enumerate(structure.get("questions", [])):

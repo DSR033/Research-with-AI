@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchSurveys, createSurvey } from '../lib/api'
 import TopBar from '../components/TopBar'
+import { createClient } from '../lib/supabase-browser'
 
 interface Survey {
   id: string
@@ -31,7 +32,9 @@ export default function Dashboard() {
   }, [])
 
   const handleCreate = async (title: string, mode: string) => {
-    const s = await createSurvey({ title, mode, status: 'draft' })
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    const s = await createSurvey({ title, mode, status: 'draft', created_by: user?.id ?? null })
     router.push(`/surveys/${s.id}`)
   }
 

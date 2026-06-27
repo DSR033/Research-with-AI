@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import TopBar from '../../components/TopBar'
+import { createClient } from '../../lib/supabase-browser'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -59,10 +60,12 @@ export default function TemplatesPage() {
   const useTemplate = async (t: Template) => {
     setCreating(t.id)
     try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
       const res = await fetch(`${API}/templates/${t.id}/use`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'classic' }),
+        body: JSON.stringify({ mode: 'classic', created_by: user?.id ?? null }),
       })
       const data = await res.json()
       router.push(`/surveys/${data.survey_id}`)
