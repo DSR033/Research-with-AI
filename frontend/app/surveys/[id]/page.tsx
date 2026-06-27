@@ -7,6 +7,7 @@ import InsightsTab from './InsightsTab'
 import LogicTab from './LogicTab'
 import QuestionEditor, { QUESTION_TYPES, TYPE_LABEL } from './QuestionEditor'
 import type { QuestionData } from './QuestionEditor'
+import PreviewModal from './PreviewModal'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -37,6 +38,8 @@ export default function SurveyBuilder() {
   const [published, setPublished] = useState(false)
   const [republished, setRepublished] = useState(false)
   const [editingQId, setEditingQId] = useState<string | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
+  const [branding, setBranding] = useState({ brand_color: '#2E5BFF', logo_url: null as string | null, org_name: 'SurveyAI' })
   const [results, setResults] = useState<{ total: number; complete: number; partial: number } | null>(null)
 
   // Build tab state
@@ -63,6 +66,7 @@ export default function SurveyBuilder() {
       setLoading(false)
     })
     getResults(id).then(setResults)
+    fetch(`${API}/surveys/${id}/branding`).then(r => r.json()).then(setBranding).catch(() => {})
   }, [id])
 
   const saveDraft = useCallback(async () => {
@@ -132,6 +136,7 @@ export default function SurveyBuilder() {
   ]
 
   return (
+    <>
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <TopBar />
       <div style={{ maxWidth: 1120, margin: '0 auto', padding: '32px 24px' }}>
@@ -160,12 +165,16 @@ export default function SurveyBuilder() {
               {' '}· {survey.mode}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {republished && (
               <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600 }}>✓ Changes live</span>
             )}
             <button className="btn ghost" onClick={saveDraft} disabled={saving}>
               {saving ? 'Saving…' : 'Save Draft'}
+            </button>
+            <button className="btn ghost" onClick={() => setShowPreview(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              👁 Preview
             </button>
             {survey.status === 'active' ? (
               <button className="btn" onClick={handleRepublish} disabled={saving}>
@@ -215,78 +224,96 @@ export default function SurveyBuilder() {
 
         {/* ── BUILD TAB ── */}
         {activeTab === 'build' && (
-          <div>
-            {/* Builder layout */}
-            <div className="builder-layout" style={{ display: 'flex', gap: 18 }}>
-              {/* Question type panel */}
-              <div style={{ width: 190, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, height: 'fit-content', flexShrink: 0 }}>
-                <h3 style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--grey)', margin: '0 0 10px' }}>Add Question</h3>
-                {QUESTION_TYPES.map(qt => (
-                  <div
-                    key={qt.type}
-                    onClick={() => addQuestion(qt.type)}
-                    style={{ fontSize: 13, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', marginBottom: 4 }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    {qt.label}
-                  </div>
-                ))}
+          <div style={{ display: 'flex', gap: 0, minHeight: 600 }}>
+
+            {/* LEFT: Question list + type picker */}
+            <div style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', paddingRight: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              {/* Add question — compact grid */}
+              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--grey)', textTransform: 'uppercase', marginBottom: 8 }}>Add question</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                  {QUESTION_TYPES.map(qt => (
+                    <div key={qt.type} onClick={() => addQuestion(qt.type)}
+                      style={{ fontSize: 12, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: 'var(--text)', border: '1px solid transparent' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent' }}>
+                      {qt.label}
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* Question canvas */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+              {/* Question list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--grey)', textTransform: 'uppercase', marginBottom: 2 }}>
+                  Questions ({questions.length})
+                </div>
                 {questions.length === 0 ? (
-                  <div style={{ background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 10, padding: 40, textAlign: 'center', color: 'var(--grey)', fontSize: 13 }}>
-                    Select a question type on the left to get started.
-                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--grey)', padding: '16px 0', textAlign: 'center' }}>No questions yet</div>
                 ) : questions.map((q, i) => {
-                  const isEditing = editingQId === q.id
-                  if (isEditing) {
-                    return (
-                      <QuestionEditor
-                        key={q.id}
-                        surveyId={id}
-                        question={q}
-                        onSave={saved => {
-                          setQuestions(prev => prev.map(prev_q => prev_q.id === saved.id ? { ...saved, logicOn: prev_q.logicOn } : prev_q))
-                          setEditingQId(null)
-                        }}
-                        onDelete={qid => {
-                          setQuestions(prev => prev.filter(prev_q => prev_q.id !== qid))
-                          setEditingQId(null)
-                        }}
-                        onCancel={() => {
-                          // If title is still empty (newly added), remove the question
-                          if (!q.title.trim()) {
-                            fetch(`${API}/surveys/${id}/questions/${q.id}`, { method: 'DELETE' })
-                            setQuestions(prev => prev.filter(prev_q => prev_q.id !== q.id))
-                          }
-                          setEditingQId(null)
-                        }}
-                      />
-                    )
-                  }
-                  // Collapsed card
+                  const isSelected = editingQId === q.id
                   const typeLabel = TYPE_LABEL[q.type] ?? q.type
                   return (
-                    <div key={q.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ fontSize: 11, color: 'var(--grey)', width: 24, flexShrink: 0, fontWeight: 600 }}>Q{i + 1}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: q.title ? 'var(--text)' : 'var(--grey)' }}>
-                          {q.title || <em>No question text — click Edit</em>}
+                    <div key={q.id} onClick={() => setEditingQId(isSelected ? null : q.id)} style={{
+                      padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+                      background: isSelected ? '#EEF2FF' : 'var(--card)',
+                      border: `1.5px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, color: 'var(--grey)', width: 22, flexShrink: 0, fontWeight: 600 }}>Q{i + 1}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: q.title ? 'var(--text)' : 'var(--grey)' }}>
+                            {q.title || 'Untitled question'}
+                          </div>
+                          <div style={{ display: 'flex', gap: 5, marginTop: 2 }}>
+                            <span style={{ fontSize: 10, color: isSelected ? 'var(--accent)' : 'var(--grey)', background: isSelected ? 'white' : 'var(--bg)', padding: '1px 6px', borderRadius: 4 }}>{typeLabel}</span>
+                            {q.required && <span style={{ fontSize: 10, color: 'var(--red)', background: 'var(--red-bg)', padding: '1px 6px', borderRadius: 4 }}>Req</span>}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                          <span style={{ fontSize: 10, color: 'var(--accent)', background: '#EEF2FF', padding: '2px 7px', borderRadius: 5 }}>{typeLabel}</span>
-                          {q.required && <span style={{ fontSize: 10, color: 'var(--red)', background: 'var(--red-bg)', padding: '2px 7px', borderRadius: 5 }}>Required</span>}
-                          {q.help_text && <span style={{ fontSize: 10, color: 'var(--grey)' }}>Has caption</span>}
-                        </div>
+                        <button onClick={e => { e.stopPropagation(); fetch(`${API}/surveys/${id}/questions/${q.id}`, { method: 'DELETE' }); setQuestions(prev => prev.filter(pq => pq.id !== q.id)); if (editingQId === q.id) setEditingQId(null) }}
+                          style={{ fontSize: 14, color: 'var(--grey)', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5, flexShrink: 0 }}
+                          title="Remove question">×</button>
                       </div>
-                      <button onClick={() => setEditingQId(q.id)} className="btn ghost" style={{ fontSize: 12, padding: '5px 12px', flexShrink: 0 }}>Edit</button>
                     </div>
                   )
                 })}
               </div>
+            </div>
+
+            {/* RIGHT: Properties panel */}
+            <div style={{ flex: 1, paddingLeft: 20, minWidth: 0 }}>
+              {editingQId ? (
+                <QuestionEditor
+                  key={editingQId}
+                  surveyId={id}
+                  question={questions.find(q => q.id === editingQId)!}
+                  onSave={saved => {
+                    setQuestions(prev => prev.map(q => q.id === saved.id ? { ...saved, logicOn: q.logicOn } : q))
+                  }}
+                  onDelete={qid => {
+                    setQuestions(prev => prev.filter(q => q.id !== qid))
+                    setEditingQId(null)
+                  }}
+                  onCancel={() => {
+                    const q = questions.find(q => q.id === editingQId)
+                    if (q && !q.title.trim()) {
+                      fetch(`${API}/surveys/${id}/questions/${q.id}`, { method: 'DELETE' })
+                      setQuestions(prev => prev.filter(pq => pq.id !== q.id))
+                    }
+                    setEditingQId(null)
+                  }}
+                />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--grey)', textAlign: 'center', padding: '48px 24px' }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>✎</div>
+                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Select a question to edit</div>
+                  <div style={{ fontSize: 13 }}>Click any question on the left, or add a new one using the type picker.</div>
+                  <button className="btn secondary" style={{ marginTop: 20 }} onClick={() => setShowPreview(true)}>
+                    👁 Preview survey
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -358,9 +385,19 @@ export default function SurveyBuilder() {
         {/* ── INSIGHTS TAB ── */}
         {activeTab === 'insights' && <InsightsTab surveyId={id} />}
 
-
       </div>
     </div>
+
+    {showPreview && (
+      <PreviewModal
+        questions={questions}
+        selectedId={editingQId}
+        branding={branding}
+        surveyTitle={survey.title}
+        onClose={() => setShowPreview(false)}
+      />
+    )}
+    </>
   )
 }
 

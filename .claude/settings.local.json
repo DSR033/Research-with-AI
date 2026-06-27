@@ -56,7 +56,8 @@
       "Bash(curl -s -X POST http://localhost:8000/admin/invite -H 'Content-Type: application/json' -d '{\"email\":\"test-invite@example.com\",\"role\":\"member\"}')",
       "Bash(venv/bin/python3 add_branding_columns.py)",
       "Bash(curl -s \"http://localhost:8000/surveys/641de29e-8a9a-44e0-acd9-a7fb710b7b9c/branding\")",
-      "Bash(venv/bin/python3 add_question_settings.py)"
+      "Bash(venv/bin/python3 add_question_settings.py)",
+      "Bash(grep -n \"^    </div>$\\\\|^    </div>\\\\n    $\" /Users/duggu/Claude/Projects/Survey/frontend/app/surveys/\\\\[id\\\\]/page.tsx)"
     ]
   }
 }
