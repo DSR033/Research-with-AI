@@ -5,16 +5,12 @@ import { getSurvey, updateSurvey, createQuestion, getResults } from '../../../li
 import TopBar from '../../../components/TopBar'
 import InsightsTab from './InsightsTab'
 import LogicTab from './LogicTab'
+import QuestionEditor, { QUESTION_TYPES, TYPE_LABEL } from './QuestionEditor'
+import type { QuestionData } from './QuestionEditor'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-interface Question {
-  id: string
-  type: string
-  title: string
-  required: boolean
-  position: number
-  options?: string[]
+interface Question extends QuestionData {
   logicOn?: boolean
 }
 
@@ -26,24 +22,7 @@ interface Survey {
   settings: Record<string, unknown>
 }
 
-const QUESTION_TYPES = [
-  { type: 'single_choice', label: '◉ Single choice' },
-  { type: 'multi_select', label: '☑ Multi-select' },
-  { type: 'rating', label: '★ Rating scale' },
-  { type: 'nps', label: '📊 NPS (0–10)' },
-  { type: 'short_text', label: '✎ Short text' },
-  { type: 'long_text', label: '📝 Long text' },
-  { type: 'yes_no', label: '⬤ Yes / No' },
-  { type: 'likert_matrix', label: '▦ Matrix / Likert' },
-  { type: 'ranking', label: '⇕ Ranking' },
-  { type: 'date_time', label: '📅 Date / time' },
-]
-
-const TYPE_LABEL: Record<string, string> = {
-  single_choice: 'Single Choice', multi_select: 'Multi-Select', rating: 'Rating Scale',
-  nps: 'NPS', short_text: 'Short Text', long_text: 'Long Text',
-  yes_no: 'Yes/No', likert_matrix: 'Matrix/Likert', ranking: 'Ranking', date_time: 'Date/Time',
-}
+// QUESTION_TYPES and TYPE_LABEL imported from QuestionEditor
 
 export default function SurveyBuilder() {
   const router = useRouter()
@@ -57,6 +36,7 @@ export default function SurveyBuilder() {
   const [saving, setSaving] = useState(false)
   const [published, setPublished] = useState(false)
   const [republished, setRepublished] = useState(false)
+  const [editingQId, setEditingQId] = useState<string | null>(null)
   const [results, setResults] = useState<{ total: number; complete: number; partial: number } | null>(null)
 
   // Build tab state
@@ -76,7 +56,7 @@ export default function SurveyBuilder() {
       setQuestions(
         (data.questions || []).map((q: Question & { question_options?: Array<{label: string}> }) => ({
           ...q,
-          options: q.question_options?.map((o: {label: string}) => o.label) ?? defaultOptions(q.type),
+          question_options: q.question_options,
           logicOn: false,
         }))
       )
@@ -84,10 +64,6 @@ export default function SurveyBuilder() {
     })
     getResults(id).then(setResults)
   }, [id])
-
-  function defaultOptions(type: string) {
-    return ['single_choice', 'multi_select', 'ranking'].includes(type) ? ['Option 1', 'Option 2'] : undefined
-  }
 
   const saveDraft = useCallback(async () => {
     if (!survey) return
@@ -114,22 +90,16 @@ export default function SurveyBuilder() {
   const addQuestion = async (type: string) => {
     const payload = {
       type,
-      title: `Untitled ${TYPE_LABEL[type] ?? type} question`,
+      title: '',   // empty — user will fill in the editor
       required: false,
       position: questions.length,
     }
     const q = await createQuestion(id, payload)
-    setQuestions(prev => [...prev, { ...q, options: defaultOptions(type), logicOn: false }])
+    setQuestions(prev => [...prev, { ...q, logicOn: false }])
+    setEditingQId(q.id)  // open editor immediately
     setActiveTab('build')
   }
 
-  const removeQuestion = (qid: string) => setQuestions(prev => prev.filter(q => q.id !== qid))
-
-  const updateTitle = (qid: string, val: string) =>
-    setQuestions(prev => prev.map(q => q.id === qid ? { ...q, title: val } : q))
-
-  const toggleLogic = (qid: string) =>
-    setQuestions(prev => prev.map(q => q.id === qid ? { ...q, logicOn: !q.logicOn } : q))
 
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--grey)' }}>Loading…</div>
@@ -265,46 +235,57 @@ export default function SurveyBuilder() {
               </div>
 
               {/* Question canvas */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
                 {questions.length === 0 ? (
-                  <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 40, textAlign: 'center', color: 'var(--grey)', fontSize: 13 }}>
-                    No questions yet — add one from the left, or use AI generation above.
+                  <div style={{ background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 10, padding: 40, textAlign: 'center', color: 'var(--grey)', fontSize: 13 }}>
+                    Select a question type on the left to get started.
                   </div>
-                ) : questions.map((q, i) => (
-                  <div key={q.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <input
-                        value={q.title}
-                        onChange={e => updateTitle(q.id, e.target.value)}
-                        style={{ border: 'none', fontSize: 15, fontWeight: 600, width: '100%', outline: 'none', background: 'transparent', fontFamily: 'inherit' }}
-                        placeholder={`Q${i + 1} — enter question text`}
+                ) : questions.map((q, i) => {
+                  const isEditing = editingQId === q.id
+                  if (isEditing) {
+                    return (
+                      <QuestionEditor
+                        key={q.id}
+                        surveyId={id}
+                        question={q}
+                        onSave={saved => {
+                          setQuestions(prev => prev.map(prev_q => prev_q.id === saved.id ? { ...saved, logicOn: prev_q.logicOn } : prev_q))
+                          setEditingQId(null)
+                        }}
+                        onDelete={qid => {
+                          setQuestions(prev => prev.filter(prev_q => prev_q.id !== qid))
+                          setEditingQId(null)
+                        }}
+                        onCancel={() => {
+                          // If title is still empty (newly added), remove the question
+                          if (!q.title.trim()) {
+                            fetch(`${API}/surveys/${id}/questions/${q.id}`, { method: 'DELETE' })
+                            setQuestions(prev => prev.filter(prev_q => prev_q.id !== q.id))
+                          }
+                          setEditingQId(null)
+                        }}
                       />
-                      <span style={{ fontSize: 11, color: 'var(--accent)', background: '#EEF2FF', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', marginLeft: 10 }}>
-                        {TYPE_LABEL[q.type] ?? q.type}
-                      </span>
-                    </div>
-
-                    {q.options && q.options.map((opt, oi) => (
-                      <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, color: 'var(--grey)' }}>
-                        ○ <input
-                          type="text"
-                          defaultValue={opt}
-                          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 13, flex: 1, fontFamily: 'inherit' }}
-                        />
+                    )
+                  }
+                  // Collapsed card
+                  const typeLabel = TYPE_LABEL[q.type] ?? q.type
+                  return (
+                    <div key={q.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ fontSize: 11, color: 'var(--grey)', width: 24, flexShrink: 0, fontWeight: 600 }}>Q{i + 1}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: q.title ? 'var(--text)' : 'var(--grey)' }}>
+                          {q.title || <em>No question text — click Edit</em>}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                          <span style={{ fontSize: 10, color: 'var(--accent)', background: '#EEF2FF', padding: '2px 7px', borderRadius: 5 }}>{typeLabel}</span>
+                          {q.required && <span style={{ fontSize: 10, color: 'var(--red)', background: 'var(--red-bg)', padding: '2px 7px', borderRadius: 5 }}>Required</span>}
+                          {q.help_text && <span style={{ fontSize: 10, color: 'var(--grey)' }}>Has caption</span>}
+                        </div>
                       </div>
-                    ))}
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                      <span
-                        onClick={() => toggleLogic(q.id)}
-                        style={{ fontSize: 12, color: 'var(--grey)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-                      >
-                        {q.logicOn ? '🔀 Skip logic: ON (go to Q+2 if "No")' : '+ Add skip logic'}
-                      </span>
-                      <span onClick={() => removeQuestion(q.id)} style={{ fontSize: 12, color: 'var(--red)', cursor: 'pointer' }}>Remove</span>
+                      <button onClick={() => setEditingQId(q.id)} className="btn ghost" style={{ fontSize: 12, padding: '5px 12px', flexShrink: 0 }}>Edit</button>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>

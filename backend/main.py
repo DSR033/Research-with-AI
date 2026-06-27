@@ -102,6 +102,32 @@ def create_question(survey_id: str, payload: dict):
     return result.data[0]
 
 
+@app.put("/surveys/{survey_id}/questions/{question_id}")
+def update_question(survey_id: str, question_id: str, payload: dict):
+    result = supabase.table("questions").update(payload).eq("id", question_id).eq("survey_id", survey_id).execute()
+    return result.data[0]
+
+
+@app.delete("/surveys/{survey_id}/questions/{question_id}")
+def delete_question(survey_id: str, question_id: str):
+    supabase.table("question_options").delete().eq("question_id", question_id).execute()
+    supabase.table("questions").delete().eq("id", question_id).eq("survey_id", survey_id).execute()
+    return {"deleted": question_id}
+
+
+@app.post("/surveys/{survey_id}/questions/{question_id}/options")
+def set_question_options(survey_id: str, question_id: str, payload: dict):
+    """Replace all options for a question."""
+    options = payload.get("options", [])
+    supabase.table("question_options").delete().eq("question_id", question_id).execute()
+    if options:
+        supabase.table("question_options").insert([
+            {"question_id": question_id, "label": opt, "position": i}
+            for i, opt in enumerate(options)
+        ]).execute()
+    return {"updated": question_id, "options": options}
+
+
 # ─── Responses ───────────────────────────────────────────────────────────────
 
 @app.post("/surveys/{survey_id}/responses")
