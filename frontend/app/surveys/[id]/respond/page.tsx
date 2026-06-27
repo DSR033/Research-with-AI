@@ -6,12 +6,41 @@ import type { LogicRule } from '../../../../lib/logic-engine'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+interface QuestionSettings {
+  help_text?: string
+  error_message?: string
+  options?: string[]
+  min_selections?: number
+  max_selections?: number
+  scale_min?: number
+  scale_max?: number
+  label_min?: string
+  label_max?: string
+  follow_up_prompt?: string
+  placeholder?: string
+  input_type?: string
+  validation_rule?: string
+  char_limit?: number
+  yes_label?: string
+  no_label?: string
+  rows?: string[]
+  columns?: string[]
+  items?: string[]
+  order_direction?: string
+  date_format?: string
+  min_date?: string
+  max_date?: string
+}
+
 interface Question {
   id: string
   type: string
   title: string
   required: boolean
   position: number
+  help_text?: string
+  error_message?: string
+  settings?: QuestionSettings
   question_options?: Array<{ id: string; label: string; position: number }>
 }
 
@@ -357,94 +386,173 @@ function renderConversationalInput(
   setTextVal: (v: string) => void,
   disabled: boolean,
 ) {
+  const s = q.settings ?? {}
+  const yesLabel = s.yes_label ?? 'Yes'
+  const noLabel  = s.no_label  ?? 'No'
   const opts = q.question_options?.sort((a, b) => a.position - b.position).map(o => o.label)
-    ?? (q.type === 'yes_no' ? ['Yes', 'No'] : [])
+    ?? (q.type === 'yes_no' ? [yesLabel, noLabel] : [])
+  const rankItems = s.items ?? opts
 
+  // NPS / scale
   if (isScale(q.type)) {
+    const min = s.scale_min ?? 0
+    const max = s.scale_max ?? 10
     return (
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'center' }}>
-        {Array.from({ length: 11 }, (_, n) => (
-          <button
-            key={n}
-            onClick={() => onSubmit(String(n), n)}
-            disabled={disabled}
-            style={{ width: 34, height: 34, borderRadius: 8, border: '1.5px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: 13 }}
-          >{n}</button>
-        ))}
+      <div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {Array.from({ length: max - min + 1 }, (_, i) => {
+            const n = min + i
+            return (
+              <button key={n} onClick={() => onSubmit(String(n), n)} disabled={disabled}
+                style={{ width: 34, height: 34, borderRadius: 8, border: '1.5px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: 13 }}>
+                {n}
+              </button>
+            )
+          })}
+        </div>
+        {(s.label_min || s.label_max) && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: 'var(--grey)' }}>
+            <span>{s.label_min}</span><span>{s.label_max}</span>
+          </div>
+        )}
       </div>
     )
   }
 
+  // Rating stars
   if (isRating(q.type)) {
+    const max = s.scale_max ?? 5
+    const min = s.scale_min ?? 1
     return (
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'center', fontSize: 30, cursor: 'pointer' }}>
-        {[1, 2, 3, 4, 5].map(n => (
-          <span
-            key={n}
-            onMouseEnter={() => setStarHover(n)}
-            onMouseLeave={() => setStarHover(0)}
-            onClick={() => onSubmit(`${n} / 5 stars`, n)}
-            style={{ color: n <= (starHover || 0) ? '#F0B429' : '#D9DEE5' }}
-          >★</span>
-        ))}
+      <div>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', fontSize: 30, cursor: 'pointer' }}>
+          {Array.from({ length: max - min + 1 }, (_, i) => {
+            const n = min + i
+            return (
+              <span key={n} onMouseEnter={() => setStarHover(n)} onMouseLeave={() => setStarHover(0)}
+                onClick={() => onSubmit(`${n} / ${max} stars`, n)}
+                style={{ color: n <= (starHover || 0) ? '#F0B429' : '#D9DEE5' }}>★</span>
+            )
+          })}
+        </div>
+        {(s.label_min || s.label_max) && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 10, color: 'var(--grey)' }}>
+            <span>{s.label_min}</span><span>{s.label_max}</span>
+          </div>
+        )}
       </div>
     )
   }
 
-  if (hasOptions(q.type) && opts.length > 0) {
+  // Choice buttons (single_choice, yes_no, multi_select)
+  if ((hasOptions(q.type) && opts.length > 0) || q.type === 'yes_no') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {opts.map(opt => (
-          <button
-            key={opt}
-            onClick={() => onSubmit(opt)}
-            disabled={disabled}
-            style={{ border: '1.5px solid var(--border)', background: 'white', borderRadius: 10, padding: '10px 14px', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
-          >{opt}</button>
+        {(q.type === 'yes_no' ? [yesLabel, noLabel] : opts).map(opt => (
+          <button key={opt} onClick={() => onSubmit(opt)} disabled={disabled}
+            style={{ border: '1.5px solid var(--border)', background: 'white', borderRadius: 10, padding: '10px 14px', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}>
+            {opt}
+          </button>
         ))}
       </div>
     )
   }
 
+  // Ranking — show items as numbered select
+  if (q.type === 'ranking' && rankItems.length > 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ fontSize: 11, color: 'var(--grey)' }}>
+          {s.order_direction === 'lowest_first' ? 'Type ranks (1 = least important)' : 'Type ranks (1 = most important)'}
+        </div>
+        {rankItems.map((item) => (
+          <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg)', borderRadius: 8, fontSize: 13 }}>
+            <input type="number" min={1} max={rankItems.length} placeholder="Rank"
+              style={{ width: 56, border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 13 }}
+              onBlur={e => {
+                if (e.target.value) onSubmit(`${item}: #${e.target.value}`)
+              }} />
+            <span>{item}</span>
+          </div>
+        ))}
+        <button onClick={() => onSubmit(textVal || 'Ranked')} disabled={disabled}
+          style={{ alignSelf: 'flex-end', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '50%', width: 38, height: 38, cursor: 'pointer', fontSize: 16 }}>
+          ➤
+        </button>
+      </div>
+    )
+  }
+
+  // Date / time
+  if (q.type === 'date_time') {
+    const fmt = s.date_format ?? 'date'
+    return (
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type={fmt === 'time' ? 'time' : fmt === 'datetime' ? 'datetime-local' : 'date'}
+          value={textVal} onChange={e => setTextVal(e.target.value)}
+          min={s.min_date} max={s.max_date}
+          style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit' }} />
+        <button onClick={() => { if (textVal) onSubmit(textVal) }} disabled={disabled || !textVal}
+          style={{ background: 'var(--accent)', color: 'white', border: 'none', width: 38, height: 38, borderRadius: '50%', cursor: 'pointer', fontSize: 16 }}>
+          ➤
+        </button>
+      </div>
+    )
+  }
+
+  // Matrix — show as message, then submit text
+  if (q.type === 'likert_matrix') {
+    return (
+      <TextInput multiline value={textVal} onChange={setTextVal}
+        onSubmit={() => { if (textVal.trim()) onSubmit(textVal.trim()) }} disabled={disabled}
+        placeholder={s.placeholder ?? 'Describe your ratings…'} />
+    )
+  }
+
+  // Short / long text
   return (
     <TextInput
       multiline={q.type === 'long_text'}
       value={textVal}
-      onChange={setTextVal}
+      onChange={v => {
+        if (q.type === 'long_text' && s.char_limit && v.length > s.char_limit) return
+        setTextVal(v)
+      }}
       onSubmit={() => { if (textVal.trim()) onSubmit(textVal.trim()) }}
       disabled={disabled}
+      inputType={(q.type === 'short_text' ? s.input_type : undefined) as React.HTMLInputTypeAttribute | undefined}
+      placeholder={s.placeholder}
+      charLimit={q.type === 'long_text' ? s.char_limit : undefined}
     />
   )
 }
 
-function TextInput({ multiline, value, onChange, onSubmit, disabled }: {
+function TextInput({ multiline, value, onChange, onSubmit, disabled, inputType, placeholder, charLimit }: {
   multiline: boolean; value: string; onChange: (v: string) => void; onSubmit: () => void; disabled: boolean
+  inputType?: React.HTMLInputTypeAttribute; placeholder?: string; charLimit?: number
 }) {
+  const ph = placeholder ?? 'Type your answer…'
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
-      {multiline ? (
-        <textarea
-          rows={2}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder="Type your answer…"
-          style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', resize: 'none' }}
-        />
-      ) : (
-        <input
-          type="text"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && onSubmit()}
-          placeholder="Type your answer…"
-          style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit' }}
-        />
+    <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {multiline ? (
+          <textarea rows={2} value={value} onChange={e => onChange(e.target.value)} placeholder={ph}
+            style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', resize: 'none' }} />
+        ) : (
+          <input type={inputType ?? 'text'} value={value} onChange={e => onChange(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onSubmit()} placeholder={ph}
+            style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit' }} />
+        )}
+        <button onClick={onSubmit} disabled={disabled || !value.trim()}
+          style={{ background: 'var(--accent)', color: 'white', border: 'none', width: 38, height: 38, borderRadius: '50%', cursor: 'pointer', fontSize: 16, flexShrink: 0, alignSelf: 'flex-end' }}>
+          ➤
+        </button>
+      </div>
+      {charLimit && (
+        <div style={{ textAlign: 'right', fontSize: 10, color: value.length > charLimit * 0.9 ? 'var(--amber)' : 'var(--grey)' }}>
+          {value.length} / {charLimit}
+        </div>
       )}
-      <button
-        onClick={onSubmit}
-        disabled={disabled || !value.trim()}
-        style={{ background: 'var(--accent)', color: 'white', border: 'none', width: 38, height: 38, borderRadius: '50%', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}
-      >➤</button>
     </div>
   )
 }
@@ -575,54 +683,85 @@ function ClassicMode({ survey, questions, rules, branding }: { survey: Survey; q
 function ClassicQuestion({ q, index, value, onChange }: {
   q: Question; index: number; value: string | string[] | undefined; onChange: (v: string | string[]) => void
 }) {
+  const s = q.settings ?? {}
   const opts = q.question_options?.sort((a, b) => a.position - b.position).map(o => o.label)
-    ?? (q.type === 'yes_no' ? ['Yes', 'No'] : [])
+    ?? (q.type === 'yes_no' ? [s.yes_label ?? 'Yes', s.no_label ?? 'No'] : [])
   const [starHover, setStarHover] = useState(0)
+  const charVal = (value as string) ?? ''
+
+  const inpStyle: React.CSSProperties = {
+    width: '100%', border: '1px solid var(--border)', borderRadius: 8,
+    padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none',
+  }
 
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
-      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>
+      {/* Title */}
+      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: s.help_text ?? q.help_text ? 6 : 14, lineHeight: 1.4 }}>
         {index + 1}. {q.title}
         {q.required && <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>}
       </div>
 
+      {/* Help text */}
+      {(s.help_text ?? q.help_text) && (
+        <div style={{ fontSize: 12, color: 'var(--grey)', marginBottom: 14, lineHeight: 1.4 }}>
+          {s.help_text ?? q.help_text}
+        </div>
+      )}
+
+      {/* NPS */}
       {isScale(q.type) && (
         <div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {Array.from({ length: 11 }, (_, n) => (
-              <button
-                key={n}
-                onClick={() => onChange(String(n))}
-                style={{
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {Array.from({ length: (s.scale_max ?? 10) - (s.scale_min ?? 0) + 1 }, (_, i) => {
+              const n = (s.scale_min ?? 0) + i
+              return (
+                <button key={n} onClick={() => onChange(String(n))} style={{
                   width: 40, height: 40, borderRadius: 8, fontSize: 13,
                   border: `1.5px solid ${value === String(n) ? 'var(--accent)' : 'var(--border)'}`,
                   background: value === String(n) ? '#EEF2FF' : 'white',
                   color: value === String(n) ? 'var(--accent)' : 'var(--text)',
                   fontWeight: value === String(n) ? 700 : 400, cursor: 'pointer',
-                }}
-              >{n}</button>
-            ))}
+                }}>{n}</button>
+              )
+            })}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--grey)' }}>
-            <span>Not likely</span><span>Very likely</span>
+            <span>{s.label_min || 'Not likely'}</span>
+            <span>{s.label_max || 'Very likely'}</span>
           </div>
+          {s.follow_up_prompt && value && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{s.follow_up_prompt}</div>
+              <textarea value={''} onChange={() => {}} placeholder="Your reason…" rows={2}
+                style={{ ...inpStyle, resize: 'vertical' }} />
+            </div>
+          )}
         </div>
       )}
 
+      {/* Rating */}
       {isRating(q.type) && (
-        <div style={{ display: 'flex', gap: 8, fontSize: 32 }}>
-          {[1, 2, 3, 4, 5].map(n => (
-            <span
-              key={n}
-              onMouseEnter={() => setStarHover(n)}
-              onMouseLeave={() => setStarHover(0)}
-              onClick={() => onChange(String(n))}
-              style={{ cursor: 'pointer', color: n <= (starHover || Number(value) || 0) ? '#F0B429' : '#D9DEE5' }}
-            >★</span>
-          ))}
+        <div>
+          <div style={{ display: 'flex', gap: 8, fontSize: 32, alignItems: 'center' }}>
+            {Array.from({ length: (s.scale_max ?? 5) - (s.scale_min ?? 1) + 1 }, (_, i) => {
+              const n = (s.scale_min ?? 1) + i
+              return (
+                <span key={n} onMouseEnter={() => setStarHover(n)} onMouseLeave={() => setStarHover(0)}
+                  onClick={() => onChange(String(n))}
+                  style={{ cursor: 'pointer', color: n <= (starHover || Number(value) || 0) ? '#F0B429' : '#D9DEE5' }}>★</span>
+              )
+            })}
+          </div>
+          {(s.label_min || s.label_max) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--grey)' }}>
+              <span>{s.label_min}</span><span>{s.label_max}</span>
+            </div>
+          )}
         </div>
       )}
 
+      {/* Single choice */}
       {q.type === 'single_choice' && opts.map(opt => (
         <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', fontSize: 14 }}>
           <input type="radio" name={q.id} value={opt} checked={value === opt} onChange={() => onChange(opt)} />
@@ -630,54 +769,131 @@ function ClassicQuestion({ q, index, value, onChange }: {
         </label>
       ))}
 
-      {q.type === 'yes_no' && ['Yes', 'No'].map(opt => (
+      {/* Yes/No */}
+      {q.type === 'yes_no' && [s.yes_label ?? 'Yes', s.no_label ?? 'No'].map(opt => (
         <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', fontSize: 14 }}>
           <input type="radio" name={q.id} value={opt} checked={value === opt} onChange={() => onChange(opt)} />
           {opt}
         </label>
       ))}
 
-      {q.type === 'multi_select' && opts.map(opt => {
-        const selected = Array.isArray(value) ? value : []
-        return (
-          <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', fontSize: 14 }}>
-            <input
-              type="checkbox"
-              checked={selected.includes(opt)}
-              onChange={e => onChange(e.target.checked ? [...selected, opt] : selected.filter(v => v !== opt))}
-            />
-            {opt}
-          </label>
-        )
-      })}
+      {/* Multi-select */}
+      {q.type === 'multi_select' && (
+        <div>
+          {opts.map(opt => {
+            const selected = Array.isArray(value) ? value : []
+            return (
+              <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', fontSize: 14 }}>
+                <input type="checkbox" checked={selected.includes(opt)}
+                  onChange={e => onChange(e.target.checked ? [...selected, opt] : selected.filter(v => v !== opt))} />
+                {opt}
+              </label>
+            )
+          })}
+          {(s.min_selections || s.max_selections) && (
+            <div style={{ fontSize: 11, color: 'var(--grey)', marginTop: 4 }}>
+              {s.min_selections && `Min ${s.min_selections}`}{s.min_selections && s.max_selections && ' · '}{s.max_selections && `Max ${s.max_selections}`} selections
+            </div>
+          )}
+        </div>
+      )}
 
+      {/* Short text */}
       {q.type === 'short_text' && (
-        <input
-          type="text"
-          value={(value as string) || ''}
-          onChange={e => onChange(e.target.value)}
-          placeholder="Your answer…"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
-        />
+        <input type={(s.input_type as React.HTMLInputTypeAttribute) ?? 'text'}
+          value={charVal} onChange={e => onChange(e.target.value)}
+          placeholder={s.placeholder ?? 'Your answer…'} style={inpStyle} />
       )}
 
+      {/* Long text */}
       {q.type === 'long_text' && (
-        <textarea
-          value={(value as string) || ''}
-          onChange={e => onChange(e.target.value)}
-          placeholder="Your answer…"
-          rows={4}
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
-        />
+        <div>
+          <textarea value={charVal} onChange={e => {
+            if (!s.char_limit || e.target.value.length <= s.char_limit) onChange(e.target.value)
+          }}
+            placeholder={s.placeholder ?? 'Your answer…'} rows={4}
+            style={{ ...inpStyle, resize: 'vertical' }} />
+          {s.char_limit && (
+            <div style={{ textAlign: 'right', fontSize: 11, color: charVal.length > s.char_limit * 0.9 ? 'var(--amber)' : 'var(--grey)', marginTop: 4 }}>
+              {charVal.length} / {s.char_limit}
+            </div>
+          )}
+        </div>
       )}
 
+      {/* Matrix / Likert */}
+      {q.type === 'likert_matrix' && (s.rows ?? []).length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ padding: '8px 12px', textAlign: 'left', width: 160 }} />
+                {(s.columns ?? []).map(col => (
+                  <th key={col} style={{ padding: '8px 8px', textAlign: 'center', fontSize: 12, color: 'var(--grey)', fontWeight: 600, whiteSpace: 'nowrap' }}>{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(s.rows ?? []).map((row, ri) => {
+                const rowVal = Array.isArray(value) ? value[ri] : undefined
+                return (
+                  <tr key={row} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 500 }}>{row}</td>
+                    {(s.columns ?? []).map(col => (
+                      <td key={col} style={{ padding: '10px 8px', textAlign: 'center' }}>
+                        <input type="radio" name={`${q.id}-row-${ri}`} value={col} checked={rowVal === col}
+                          onChange={() => {
+                            const arr = Array.isArray(value) ? [...value] : (s.rows ?? []).map(() => '')
+                            arr[ri] = col
+                            onChange(arr)
+                          }} />
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Ranking */}
+      {q.type === 'ranking' && (
+        <div>
+          <div style={{ fontSize: 12, color: 'var(--grey)', marginBottom: 8 }}>
+            {s.order_direction === 'lowest_first' ? 'Rank from least to most important (1 = least)' : 'Rank from most to least important (1 = most)'}
+          </div>
+          {(s.items ?? opts).map((item, i) => (
+            <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg)', borderRadius: 8, marginBottom: 6, fontSize: 14 }}>
+              <select value={(Array.isArray(value) ? value[i] : undefined) ?? ''}
+                onChange={e => {
+                  const arr = Array.isArray(value) ? [...value] : (s.items ?? opts).map(() => '')
+                  arr[i] = e.target.value
+                  onChange(arr)
+                }}
+                style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 13, fontFamily: 'inherit' }}>
+                <option value="">—</option>
+                {(s.items ?? opts).map((_, rank) => <option key={rank + 1} value={String(rank + 1)}>{rank + 1}</option>)}
+              </select>
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Date / Time */}
       {q.type === 'date_time' && (
         <input
-          type="datetime-local"
-          value={(value as string) || ''}
-          onChange={e => onChange(e.target.value)}
-          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit' }}
+          type={s.date_format === 'time' ? 'time' : s.date_format === 'datetime' ? 'datetime-local' : 'date'}
+          value={charVal} onChange={e => onChange(e.target.value)}
+          min={s.min_date} max={s.max_date}
+          style={{ ...inpStyle, width: 'auto' }}
         />
+      )}
+
+      {/* Error message */}
+      {q.error_message && (
+        <div style={{ fontSize: 11, color: 'var(--grey)', marginTop: 6, fontStyle: 'italic' }}>{q.error_message}</div>
       )}
     </div>
   )
