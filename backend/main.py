@@ -349,6 +349,133 @@ def crosstab(survey_id: str, row_qid: str, col_qid: str):
     }
 
 
+# ─── Analytics: correlation + drivers ────────────────────────────────────────
+
+def _numeric_answers(survey_id: str, question_ids: list[str]) -> dict[str, list[float]]:
+    """Return {question_id: [numeric values]} from complete responses."""
+    responses = supabase.table("responses").select("id").eq("survey_id", survey_id).in_(
+        "status", ["complete"]
+    ).execute().data
+    valid_ids = {r["id"] for r in responses}
+    if not valid_ids or not question_ids:
+        return {}
+
+    answers_raw = supabase.table("answers").select("response_id, question_id, value").in_(
+        "question_id", question_ids
+    ).execute().data
+
+    # Build response-keyed map  {response_id: {question_id: numeric_value}}
+    rmap: dict[str, dict[str, float]] = {}
+    for a in answers_raw:
+        if a["response_id"] not in valid_ids:
+            continue
+        val = a["value"]
+        num = None
+        if isinstance(val, dict):
+            if "number" in val: num = float(val["number"])
+            elif "text" in val:
+                try: num = float(val["text"])
+                except: pass
+        try:
+            if num is None: num = float(val)
+        except: pass
+        if num is not None:
+            rmap.setdefault(a["response_id"], {})[a["question_id"]] = num
+
+    # Convert to per-question value lists (paired — same response IDs only)
+    all_resp = sorted(valid_ids)
+    result: dict[str, list[float]] = {qid: [] for qid in question_ids}
+    for rid in all_resp:
+        row = rmap.get(rid, {})
+        if all(qid in row for qid in question_ids):
+            for qid in question_ids:
+                result[qid].append(row[qid])
+    return result
+
+
+def _pearson(x: list, y: list):
+    """Pearson correlation coefficient."""
+    import math
+    n = len(x)
+    if n < 3:
+        return None
+    mx, my = sum(x)/n, sum(y)/n
+    num = sum((a - mx) * (b - my) for a, b in zip(x, y))
+    dx  = math.sqrt(sum((a - mx)**2 for a in x))
+    dy  = math.sqrt(sum((b - my)**2 for b in y))
+    if dx == 0 or dy == 0:
+        return None
+    return round(num / (dx * dy), 3)
+
+
+@app.get("/surveys/{survey_id}/analytics/correlation")
+def correlation_matrix(survey_id: str):
+    """Pearson correlation matrix for all numeric/scale questions."""
+    SCALE_TYPES = {"rating", "nps", "slider", "numeric_input", "likert_matrix"}
+    questions = supabase.table("questions").select("id, title, type, position").eq(
+        "survey_id", survey_id
+    ).execute().data
+    scale_qs = [q for q in questions if q["type"] in SCALE_TYPES]
+
+    if len(scale_qs) < 2:
+        return {"questions": [], "matrix": {}, "n": 0}
+
+    qids = [q["id"] for q in scale_qs]
+    vals = _numeric_answers(survey_id, qids)
+    n = len(next(iter(vals.values()), []))
+
+    matrix: dict[str, dict[str, float | None]] = {}
+    for q1 in scale_qs:
+        matrix[q1["id"]] = {}
+        for q2 in scale_qs:
+            if q1["id"] == q2["id"]:
+                matrix[q1["id"]][q2["id"]] = 1.0
+            else:
+                v1, v2 = vals.get(q1["id"], []), vals.get(q2["id"], [])
+                matrix[q1["id"]][q2["id"]] = _pearson(v1, v2)
+
+    return {
+        "questions": [{"id": q["id"], "title": q["title"], "type": q["type"]} for q in scale_qs],
+        "matrix": matrix,
+        "n": n,
+    }
+
+
+@app.get("/surveys/{survey_id}/analytics/drivers")
+def driver_analysis(survey_id: str, outcome_qid: str):
+    """Correlation of every other question with the chosen outcome question."""
+    questions = supabase.table("questions").select("id, title, type, position").eq(
+        "survey_id", survey_id
+    ).execute().data
+
+    SCALE_TYPES = {"rating", "nps", "slider", "numeric_input"}
+    predictor_qs = [q for q in questions if q["id"] != outcome_qid and q["type"] in SCALE_TYPES]
+    if not predictor_qs:
+        return {"outcome": None, "drivers": [], "n": 0}
+
+    outcome_q = next((q for q in questions if q["id"] == outcome_qid), None)
+    if not outcome_q:
+        raise HTTPException(404, "Outcome question not found")
+
+    all_qids = [outcome_qid] + [q["id"] for q in predictor_qs]
+    vals = _numeric_answers(survey_id, all_qids)
+    n = len(vals.get(outcome_qid, []))
+
+    drivers = []
+    for q in predictor_qs:
+        r = _pearson(vals.get(outcome_qid, []), vals.get(q["id"], []))
+        drivers.append({
+            "question_id": q["id"],
+            "title": q["title"],
+            "type": q["type"],
+            "correlation": r,
+            "abs_correlation": abs(r) if r is not None else None,
+        })
+
+    drivers.sort(key=lambda d: d["abs_correlation"] or 0, reverse=True)
+    return {"outcome": {"id": outcome_q["id"], "title": outcome_q["title"]}, "drivers": drivers, "n": n}
+
+
 # ─── Branding (public) ───────────────────────────────────────────────────────
 
 @app.get("/surveys/{survey_id}/branding")
