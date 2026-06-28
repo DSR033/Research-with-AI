@@ -30,6 +30,17 @@ interface QuestionSettings {
   date_format?: string
   min_date?: string
   max_date?: string
+  // Slider
+  step?: number
+  start_value?: number
+  // Numeric Input
+  numeric_type?: string
+  min_val?: number
+  max_val?: number
+  unit_label?: string
+  // Constant Sum
+  constant_items?: string[]
+  constant_total?: number
 }
 
 interface Question {
@@ -883,13 +894,78 @@ function ClassicQuestion({ q, index, value, onChange }: {
 
       {/* Date / Time */}
       {q.type === 'date_time' && (
-        <input
-          type={s.date_format === 'time' ? 'time' : s.date_format === 'datetime' ? 'datetime-local' : 'date'}
+        <input type={s.date_format === 'time' ? 'time' : s.date_format === 'datetime' ? 'datetime-local' : 'date'}
           value={charVal} onChange={e => onChange(e.target.value)}
-          min={s.min_date} max={s.max_date}
-          style={{ ...inpStyle, width: 'auto' }}
-        />
+          min={s.min_date} max={s.max_date} style={{ ...inpStyle, width: 'auto' }} />
       )}
+
+      {/* Dropdown */}
+      {q.type === 'dropdown' && (
+        <select value={charVal} onChange={e => onChange(e.target.value)} style={{ ...inpStyle, width: '100%', cursor: 'pointer' }}>
+          <option value="">— Select an option —</option>
+          {(s.options ?? opts).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      )}
+
+      {/* Slider */}
+      {q.type === 'slider' && (
+        <div style={{ padding: '8px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--grey)', marginBottom: 6 }}>
+            <span>{s.label_min || String(s.scale_min ?? 0)}</span>
+            <span style={{ fontWeight: 700, color: 'var(--accent)', fontSize: 14 }}>{charVal || String(s.start_value ?? 50)}</span>
+            <span>{s.label_max || String(s.scale_max ?? 100)}</span>
+          </div>
+          <input type="range" min={s.scale_min ?? 0} max={s.scale_max ?? 100} step={s.step ?? 1}
+            value={charVal || String(s.start_value ?? 50)}
+            onChange={e => onChange(e.target.value)}
+            style={{ width: '100%', accentColor: 'var(--accent)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--grey)', marginTop: 2 }}>
+            <span>{s.scale_min ?? 0}</span><span>{s.scale_max ?? 100}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Numeric Input */}
+      {q.type === 'numeric_input' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="number" min={s.min_val} max={s.max_val}
+            step={s.numeric_type === 'decimal' ? 0.01 : 1}
+            value={charVal} onChange={e => onChange(e.target.value)}
+            placeholder={s.placeholder ?? 'Enter a number'}
+            style={{ ...inpStyle, width: 200 }} />
+          {s.unit_label && <span style={{ fontSize: 14, color: 'var(--grey)', fontWeight: 600 }}>{s.unit_label}</span>}
+        </div>
+      )}
+
+      {/* Constant Sum */}
+      {q.type === 'constant_sum' && (() => {
+        const items = s.constant_items ?? opts
+        const total = s.constant_total ?? 100
+        const alloc: number[] = Array.isArray(value) ? value.map(Number) : items.map(() => 0)
+        const used = alloc.reduce((a, b) => a + (b || 0), 0)
+        const remaining = total - used
+        return (
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--grey)', marginBottom: 10 }}>
+              Distribute <strong>{total}</strong> {s.unit_label || 'points'} across the items.
+              Remaining: <strong style={{ color: remaining < 0 ? 'var(--red)' : remaining === 0 ? 'var(--green)' : 'var(--accent)' }}>{remaining}</strong>
+            </div>
+            {items.map((item, i) => (
+              <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, fontSize: 14 }}>
+                <div style={{ flex: 1 }}>{item}</div>
+                <input type="number" min={0} max={total} value={alloc[i] ?? 0}
+                  onChange={e => {
+                    const next = [...alloc]
+                    next[i] = +e.target.value
+                    onChange(next.map(String) as unknown as string)
+                  }}
+                  style={{ width: 80, border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 13, textAlign: 'right' as const }} />
+                <span style={{ color: 'var(--grey)', fontSize: 12, width: 40 }}>{s.unit_label || 'pts'}</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Error message */}
       {q.error_message && (

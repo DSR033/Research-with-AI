@@ -281,6 +281,74 @@ def get_results(survey_id: str):
     }
 
 
+# ─── Analytics ───────────────────────────────────────────────────────────────
+
+@app.get("/surveys/{survey_id}/analytics/crosstab")
+def crosstab(survey_id: str, row_qid: str, col_qid: str):
+    """Cross-tabulation: frequency of row question responses × col question responses."""
+    answers = supabase.table("answers").select("response_id, question_id, value").in_(
+        "question_id", [row_qid, col_qid]
+    ).execute().data
+
+    # Only include complete, non-discarded responses
+    responses = supabase.table("responses").select("id").eq("survey_id", survey_id).in_(
+        "status", ["complete", "partial"]
+    ).execute().data
+    valid_ids = {r["id"] for r in responses}
+
+    # Build per-response answer map
+    resp_map: dict[str, dict[str, str]] = {}
+    for a in answers:
+        if a["response_id"] not in valid_ids:
+            continue
+        rid = a["response_id"]
+        qid = a["question_id"]
+        val = a["value"]
+        if isinstance(val, dict):
+            if "text" in val:    display = str(val["text"])
+            elif "number" in val: display = str(val["number"])
+            elif "choice" in val: display = str(val["choice"])
+            elif "options" in val: display = ", ".join(val["options"])
+            else: display = ""
+        else:
+            display = str(val) if val else ""
+        resp_map.setdefault(rid, {})[qid] = display
+
+    # Collect unique values for each question
+    row_vals: list[str] = []
+    col_vals: list[str] = []
+    for answers_by_q in resp_map.values():
+        rv = answers_by_q.get(row_qid, "")
+        cv = answers_by_q.get(col_qid, "")
+        if rv and rv not in row_vals: row_vals.append(rv)
+        if cv and cv not in col_vals: col_vals.append(cv)
+    row_vals.sort(); col_vals.sort()
+
+    # Build count matrix
+    counts: dict[str, dict[str, int]] = {rv: {cv: 0 for cv in col_vals} for rv in row_vals}
+    row_totals: dict[str, int] = {rv: 0 for rv in row_vals}
+    col_totals: dict[str, int] = {cv: 0 for cv in col_vals}
+    grand_total = 0
+
+    for answers_by_q in resp_map.values():
+        rv = answers_by_q.get(row_qid, "")
+        cv = answers_by_q.get(col_qid, "")
+        if rv in counts and cv in counts[rv]:
+            counts[rv][cv] += 1
+            row_totals[rv] += 1
+            col_totals[cv] += 1
+            grand_total += 1
+
+    return {
+        "row_values": row_vals,
+        "col_values": col_vals,
+        "counts": counts,
+        "row_totals": row_totals,
+        "col_totals": col_totals,
+        "grand_total": grand_total,
+    }
+
+
 # ─── Branding (public) ───────────────────────────────────────────────────────
 
 @app.get("/surveys/{survey_id}/branding")

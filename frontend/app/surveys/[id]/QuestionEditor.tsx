@@ -7,15 +7,17 @@ export interface QuestionSettings {
   // Common
   help_text?: string
   error_message?: string
-  // Single / Multi choice options
+  // Single / Multi choice / Dropdown options
   options?: string[]
   min_selections?: number
   max_selections?: number
-  // Rating
+  // Rating / Slider
   scale_min?: number
   scale_max?: number
   label_min?: string
   label_max?: string
+  step?: number
+  start_value?: number
   // NPS
   follow_up_prompt?: string
   // Short / Long text
@@ -36,6 +38,14 @@ export interface QuestionSettings {
   date_format?: 'date' | 'time' | 'datetime'
   min_date?: string
   max_date?: string
+  // Numeric Input
+  numeric_type?: 'integer' | 'decimal'
+  min_val?: number
+  max_val?: number
+  unit_label?: string
+  // Constant Sum
+  constant_items?: string[]
+  constant_total?: number
 }
 
 export interface QuestionData {
@@ -53,21 +63,26 @@ export interface QuestionData {
 const QUESTION_TYPES = [
   { type: 'single_choice',  label: '◉ Single choice' },
   { type: 'multi_select',   label: '☑ Multi-select' },
+  { type: 'dropdown',       label: '▾ Dropdown' },
+  { type: 'yes_no',         label: '⬤ Yes / No' },
   { type: 'rating',         label: '★ Rating scale' },
+  { type: 'likert_matrix',  label: '▦ Matrix / Likert' },
   { type: 'nps',            label: '📊 NPS (0–10)' },
+  { type: 'slider',         label: '⟷ Slider' },
+  { type: 'ranking',        label: '⇕ Ranking' },
+  { type: 'numeric_input',  label: '# Numeric input' },
+  { type: 'constant_sum',   label: 'Σ Constant sum' },
   { type: 'short_text',     label: '✎ Short text' },
   { type: 'long_text',      label: '📝 Long text' },
-  { type: 'yes_no',         label: '⬤ Yes / No' },
-  { type: 'likert_matrix',  label: '▦ Matrix / Likert' },
-  { type: 'ranking',        label: '⇕ Ranking' },
   { type: 'date_time',      label: '📅 Date / time' },
 ]
 
 const TYPE_LABEL: Record<string, string> = Object.fromEntries(QUESTION_TYPES.map(t => [t.type, t.label]))
 
-const HAS_OPTIONS   = ['single_choice', 'multi_select']
-const HAS_ITEMS     = ['ranking']
-const HAS_MATRIX    = ['likert_matrix']
+const HAS_OPTIONS      = ['single_choice', 'multi_select', 'dropdown']
+const HAS_ITEMS        = ['ranking', 'constant_sum']
+const HAS_MATRIX       = ['likert_matrix']
+const CONSTANT_SUM_KEY = 'constant_items'
 
 // ── Reusable small UI ──────────────────────────────────────────────────────────
 const inp: React.CSSProperties = {
@@ -122,13 +137,16 @@ export default function QuestionEditor({
   const [errMsg,   setErrMsg]   = useState(question.error_message ?? '')
   const [settings, setSettings] = useState<QuestionSettings>({
     options:    question.question_options?.map(o => o.label) ?? (HAS_OPTIONS.includes(question.type) ? ['Option 1', 'Option 2'] : undefined),
-    items:      question.settings?.items ?? (HAS_ITEMS.includes(question.type) ? ['Item 1', 'Item 2', 'Item 3'] : undefined),
+    items:      question.settings?.items ?? (question.type === 'ranking' ? ['Item 1', 'Item 2', 'Item 3'] : undefined),
+    constant_items: question.settings?.constant_items ?? (question.type === 'constant_sum' ? ['Option 1', 'Option 2', 'Option 3'] : undefined),
     rows:       question.settings?.rows ?? (HAS_MATRIX.includes(question.type) ? ['Row 1', 'Row 2'] : undefined),
     columns:    question.settings?.columns ?? (HAS_MATRIX.includes(question.type) ? ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'] : undefined),
     min_selections: question.settings?.min_selections,
     max_selections: question.settings?.max_selections,
-    scale_min:  question.settings?.scale_min ?? (type === 'nps' ? 0 : 1),
-    scale_max:  question.settings?.scale_max ?? (type === 'nps' ? 10 : 5),
+    scale_min:  question.settings?.scale_min ?? (type === 'nps' ? 0 : type === 'slider' ? 0 : 1),
+    scale_max:  question.settings?.scale_max ?? (type === 'nps' ? 10 : type === 'slider' ? 100 : 5),
+    step:       question.settings?.step ?? 1,
+    start_value: question.settings?.start_value ?? 50,
     label_min:  question.settings?.label_min ?? '',
     label_max:  question.settings?.label_max ?? '',
     follow_up_prompt: question.settings?.follow_up_prompt ?? '',
@@ -142,6 +160,11 @@ export default function QuestionEditor({
     date_format: question.settings?.date_format ?? 'date',
     min_date:   question.settings?.min_date ?? '',
     max_date:   question.settings?.max_date ?? '',
+    numeric_type: question.settings?.numeric_type ?? 'integer',
+    min_val:    question.settings?.min_val,
+    max_val:    question.settings?.max_val,
+    unit_label: question.settings?.unit_label ?? '',
+    constant_total: question.settings?.constant_total ?? 100,
   })
   const [saving, setSaving] = useState(false)
 
@@ -151,11 +174,14 @@ export default function QuestionEditor({
   const changeType = (t: string) => {
     setType(t)
     if (HAS_OPTIONS.includes(t) && !settings.options?.length) set({ options: ['Option 1', 'Option 2'] })
-    if (t === 'yes_no')       set({ yes_label: settings.yes_label || 'Yes', no_label: settings.no_label || 'No' })
-    if (t === 'nps')          set({ scale_min: 0, scale_max: 10, label_min: settings.label_min || 'Not at all likely', label_max: settings.label_max || 'Extremely likely' })
-    if (t === 'rating')       set({ scale_min: 1, scale_max: 5, label_min: settings.label_min || 'Poor', label_max: settings.label_max || 'Excellent' })
+    if (t === 'yes_no')        set({ yes_label: settings.yes_label || 'Yes', no_label: settings.no_label || 'No' })
+    if (t === 'nps')           set({ scale_min: 0, scale_max: 10, label_min: settings.label_min || 'Not at all likely', label_max: settings.label_max || 'Extremely likely' })
+    if (t === 'rating')        set({ scale_min: 1, scale_max: 5, label_min: settings.label_min || 'Poor', label_max: settings.label_max || 'Excellent' })
+    if (t === 'slider')        set({ scale_min: 0, scale_max: 100, step: 1, start_value: 50 })
+    if (t === 'numeric_input') set({ numeric_type: 'integer', unit_label: '' })
+    if (t === 'constant_sum')  set({ constant_items: settings.constant_items?.length ? settings.constant_items : ['Option 1', 'Option 2', 'Option 3'], constant_total: 100 })
     if (HAS_MATRIX.includes(t) && !settings.rows?.length) set({ rows: ['Row 1', 'Row 2'], columns: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'] })
-    if (HAS_ITEMS.includes(t) && !settings.items?.length) set({ items: ['Item 1', 'Item 2', 'Item 3'] })
+    if (t === 'ranking' && !settings.items?.length) set({ items: ['Item 1', 'Item 2', 'Item 3'] })
   }
 
   const handleSave = async () => {
@@ -177,11 +203,13 @@ export default function QuestionEditor({
       body: JSON.stringify(qPayload),
     })
 
-    // Save options (for choice/ranking/matrix types)
+    // Save options for choice/dropdown, ranking items, matrix rows, constant sum items
     const optionValues = HAS_OPTIONS.includes(type)
       ? (settings.options ?? []).filter(Boolean)
-      : HAS_ITEMS.includes(type)
+      : type === 'ranking'
       ? (settings.items ?? []).filter(Boolean)
+      : type === 'constant_sum'
+      ? (settings.constant_items ?? []).filter(Boolean)
       : HAS_MATRIX.includes(type)
       ? (settings.rows ?? []).filter(Boolean)
       : null
@@ -355,6 +383,74 @@ export default function QuestionEditor({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Row label="Min date / time"><input type={s.date_format === 'time' ? 'time' : 'date'} value={s.min_date ?? ''} onChange={e => set({ min_date: e.target.value })} style={inp} /></Row>
             <Row label="Max date / time"><input type={s.date_format === 'time' ? 'time' : 'date'} value={s.max_date ?? ''} onChange={e => set({ max_date: e.target.value })} style={inp} /></Row>
+          </div>
+        </>)}
+
+        {/* ── DROPDOWN ── same as single choice with search note */}
+        {type === 'dropdown' && (<>
+          <OptionsEditor label="Options" values={s.options ?? []} onChange={v => set({ options: v })} />
+          <div style={{ fontSize: 11, color: 'var(--grey)', padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+            💡 Dropdown is ideal for long lists (10+ options). For short lists use Single Choice instead.
+          </div>
+        </>)}
+
+        {/* ── SLIDER ── */}
+        {type === 'slider' && (<>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <Row label="Minimum"><input type="number" value={s.scale_min ?? 0} onChange={e => set({ scale_min: +e.target.value })} style={inp} /></Row>
+            <Row label="Maximum"><input type="number" value={s.scale_max ?? 100} onChange={e => set({ scale_max: +e.target.value })} style={inp} /></Row>
+            <Row label="Step size"><input type="number" min={1} value={s.step ?? 1} onChange={e => set({ step: +e.target.value })} style={inp} /></Row>
+          </div>
+          <Row label="Default start position" hint="Where the handle sits when the question first appears.">
+            <input type="number" value={s.start_value ?? 50} onChange={e => set({ start_value: +e.target.value })} style={{ ...inp, width: 120 }} />
+          </Row>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Row label="Left label (low end)"><input value={s.label_min ?? ''} onChange={e => set({ label_min: e.target.value })} placeholder="e.g. Not at all" style={inp} /></Row>
+            <Row label="Right label (high end)"><input value={s.label_max ?? ''} onChange={e => set({ label_max: e.target.value })} placeholder="e.g. Completely" style={inp} /></Row>
+          </div>
+          {/* Live preview */}
+          <Row label="Preview">
+            <div style={{ padding: '12px 0' }}>
+              <input type="range" min={s.scale_min ?? 0} max={s.scale_max ?? 100} step={s.step ?? 1} defaultValue={s.start_value ?? 50} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--grey)', marginTop: 4 }}>
+                <span>{s.label_min || String(s.scale_min ?? 0)}</span>
+                <span>{s.label_max || String(s.scale_max ?? 100)}</span>
+              </div>
+            </div>
+          </Row>
+        </>)}
+
+        {/* ── NUMERIC INPUT ── */}
+        {type === 'numeric_input' && (<>
+          <Row label="Number type">
+            <select value={s.numeric_type ?? 'integer'} onChange={e => set({ numeric_type: e.target.value as 'integer' | 'decimal' })} style={{ ...inp, width: 'auto' }}>
+              <option value="integer">Integer (whole numbers only)</option>
+              <option value="decimal">Decimal (allows fractions)</option>
+            </select>
+          </Row>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <Row label="Min value"><input type="number" value={s.min_val ?? ''} onChange={e => set({ min_val: e.target.value ? +e.target.value : undefined })} placeholder="No minimum" style={inp} /></Row>
+            <Row label="Max value"><input type="number" value={s.max_val ?? ''} onChange={e => set({ max_val: e.target.value ? +e.target.value : undefined })} placeholder="No maximum" style={inp} /></Row>
+            <Row label="Unit label" hint="e.g. USD, kg, %"><input value={s.unit_label ?? ''} onChange={e => set({ unit_label: e.target.value })} placeholder="e.g. USD" style={inp} /></Row>
+          </div>
+          <Row label="Placeholder text"><input value={s.placeholder ?? ''} onChange={e => set({ placeholder: e.target.value })} placeholder="e.g. Enter amount" style={inp} /></Row>
+        </>)}
+
+        {/* ── CONSTANT SUM ── */}
+        {type === 'constant_sum' && (<>
+          <OptionsEditor
+            label="Items to allocate"
+            values={s.constant_items ?? []}
+            onChange={v => set({ constant_items: v })}
+            addLabel="+ Add item"
+          />
+          <Row label="Total must equal" hint="Respondents distribute this total across all items.">
+            <input type="number" min={1} value={s.constant_total ?? 100} onChange={e => set({ constant_total: +e.target.value })}
+              style={{ ...inp, width: 120 }} />
+          </Row>
+          <Row label="Unit label" hint="e.g. points, %, $, hours"><input value={s.unit_label ?? ''} onChange={e => set({ unit_label: e.target.value })} placeholder="e.g. points" style={inp} /></Row>
+          <div style={{ fontSize: 11, color: 'var(--grey)', padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+            💡 Best for budget allocation and importance weighting. Keep items to 7 or fewer.
           </div>
         </>)}
 

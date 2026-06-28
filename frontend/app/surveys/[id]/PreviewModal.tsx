@@ -172,6 +172,57 @@ function PreviewQuestion({ q, color }: { q: QuestionData; color: string }) {
           style={{ ...inp, width: 'auto' }} />
       )}
 
+      {/* Dropdown */}
+      {q.type === 'dropdown' && (
+        <select style={{ ...inp, width: '100%' }}>
+          <option value="">— Select an option —</option>
+          {(s.options ?? opts).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      )}
+
+      {/* Slider */}
+      {q.type === 'slider' && (
+        <div style={{ padding: '8px 0' }}>
+          <input type="range" min={s.scale_min ?? 0} max={s.scale_max ?? 100} step={s.step ?? 1}
+            defaultValue={s.start_value ?? 50} style={{ width: '100%', accentColor: color }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6B7280', marginTop: 4 }}>
+            <span>{s.label_min || String(s.scale_min ?? 0)}</span>
+            <span>{s.label_max || String(s.scale_max ?? 100)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Numeric input */}
+      {q.type === 'numeric_input' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="number" min={s.min_val} max={s.max_val}
+            step={s.numeric_type === 'decimal' ? 0.01 : 1}
+            placeholder={s.placeholder ?? 'Enter number'}
+            style={{ ...inp, width: 160 }} />
+          {s.unit_label && <span style={{ fontSize: 13, color: '#6B7280' }}>{s.unit_label}</span>}
+        </div>
+      )}
+
+      {/* Constant sum */}
+      {q.type === 'constant_sum' && (
+        <div>
+          <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 8 }}>
+            Distribute {s.constant_total ?? 100} {s.unit_label || 'points'} across the items below:
+          </div>
+          {(s.constant_items ?? opts).map(item => (
+            <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 13 }}>
+              <div style={{ flex: 1 }}>{item}</div>
+              <input type="number" min={0} max={s.constant_total ?? 100} defaultValue={0}
+                style={{ width: 70, border: '1px solid #E3E8EF', borderRadius: 6, padding: '6px 8px', fontSize: 13, textAlign: 'right' }} />
+              <span style={{ color: '#9CA3AF', fontSize: 12 }}>{s.unit_label || 'pts'}</span>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: color, fontWeight: 600, marginTop: 4 }}>
+            Total: 0 / {s.constant_total ?? 100} {s.unit_label || 'points'}
+          </div>
+        </div>
+      )}
+
       {/* Yes/No already handled above; this catches edge case */}
       {q.type === 'yes_no' && choiceOpts.length === 0 && (
         <>

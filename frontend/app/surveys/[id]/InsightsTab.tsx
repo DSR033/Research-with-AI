@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import AnalyticsTab from './AnalyticsTab'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -319,7 +320,7 @@ function TextBreakdown({ answers }: { answers: string[] }) {
 
 // ── Main InsightsTab ───────────────────────────────────────────────────────────
 export default function InsightsTab({ surveyId }: { surveyId: string }) {
-  const [subTab, setSubTab] = useState<'overview' | 'responses' | 'breakdown'>('overview')
+  const [subTab, setSubTab] = useState<'overview' | 'responses' | 'breakdown' | 'analytics'>('overview')
   const [questions, setQuestions] = useState<Question[]>([])
   const [responses, setResponses] = useState<ResponseRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -376,9 +377,10 @@ export default function InsightsTab({ surveyId }: { surveyId: string }) {
   const weekDelta = lastWeek > 0 ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100) : null
 
   const SUB_TABS = [
-    { id: 'overview' as const,  label: 'Overview' },
-    { id: 'responses' as const, label: `Responses (${total})` },
-    { id: 'breakdown' as const, label: 'Breakdown' },
+    { id: 'overview' as const,   label: 'Overview' },
+    { id: 'responses' as const,  label: `Responses (${total})` },
+    { id: 'breakdown' as const,  label: 'Breakdown' },
+    { id: 'analytics' as const,  label: '📊 Analytics' },
   ]
 
   return (
@@ -604,6 +606,12 @@ export default function InsightsTab({ surveyId }: { surveyId: string }) {
               ))}
             </div>
           )}
+
+          {/* ── ANALYTICS ── */}
+          {subTab === 'analytics' && (
+            <AnalyticsTab surveyId={surveyId} />
+          )}
+
         </>
       )}
     </div>
