@@ -520,6 +520,85 @@ function renderConversationalInput(
     )
   }
 
+  // Slider — range input with live value display
+  if (q.type === 'slider') {
+    const min = s.scale_min ?? 0; const max = s.scale_max ?? 100; const step = s.step ?? 1
+    const current = textVal || String(s.start_value ?? Math.round((min + max) / 2))
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--grey)' }}>
+          <span>{s.label_min || String(min)}</span>
+          <span style={{ fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>{current}</span>
+          <span>{s.label_max || String(max)}</span>
+        </div>
+        <input type="range" min={min} max={max} step={step} value={current}
+          onChange={e => setTextVal(e.target.value)} disabled={disabled}
+          style={{ width: '100%', accentColor: 'var(--accent)' }} />
+        <button onClick={() => onSubmit(current, Number(current))} disabled={disabled}
+          style={{ alignSelf: 'flex-end', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '50%', width: 38, height: 38, cursor: 'pointer', fontSize: 16 }}>
+          ➤
+        </button>
+      </div>
+    )
+  }
+
+  // Numeric input
+  if (q.type === 'numeric_input') {
+    return (
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type="number" min={s.min_val} max={s.max_val}
+          step={s.numeric_type === 'decimal' ? 0.01 : 1}
+          value={textVal} onChange={e => setTextVal(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && textVal && onSubmit(textVal, Number(textVal))}
+          placeholder={s.placeholder ?? 'Enter number…'}
+          disabled={disabled}
+          style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit' }} />
+        {s.unit_label && <span style={{ fontSize: 13, color: 'var(--grey)', fontWeight: 600 }}>{s.unit_label}</span>}
+        <button onClick={() => textVal && onSubmit(textVal, Number(textVal))} disabled={disabled || !textVal}
+          style={{ background: 'var(--accent)', color: 'white', border: 'none', width: 38, height: 38, borderRadius: '50%', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>
+          ➤
+        </button>
+      </div>
+    )
+  }
+
+  // Constant sum — per-item allocation in chat
+  if (q.type === 'constant_sum') {
+    const items = s.constant_items ?? opts
+    const total = s.constant_total ?? 100
+    // Parse current allocations from textVal (stored as "item1:val,item2:val")
+    const allocMap: Record<string, number> = {}
+    if (textVal) textVal.split(',').forEach(pair => {
+      const [k, v] = pair.split(':'); if (k && v) allocMap[k] = Number(v)
+    })
+    const used = items.reduce((sum, item) => sum + (allocMap[item] ?? 0), 0)
+    const remaining = total - used
+    const updateAlloc = (item: string, val: number) => {
+      const next = { ...allocMap, [item]: val }
+      setTextVal(items.map(it => `${it}:${next[it] ?? 0}`).join(','))
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--grey)', marginBottom: 2 }}>
+          Distribute {total} {s.unit_label || 'points'} · Remaining: <strong style={{ color: remaining < 0 ? 'var(--red)' : remaining === 0 ? 'var(--green)' : 'var(--accent)' }}>{remaining}</strong>
+        </div>
+        {items.map(item => (
+          <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <span style={{ flex: 1 }}>{item}</span>
+            <input type="number" min={0} max={total} value={allocMap[item] ?? 0}
+              onChange={e => updateAlloc(item, +e.target.value)}
+              style={{ width: 64, border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, textAlign: 'right' as const }} />
+            <span style={{ fontSize: 11, color: 'var(--grey)', width: 28 }}>{s.unit_label || 'pts'}</span>
+          </div>
+        ))}
+        <button onClick={() => remaining === 0 && onSubmit(textVal)} disabled={disabled || remaining !== 0}
+          style={{ alignSelf: 'flex-end', marginTop: 4, background: remaining === 0 ? 'var(--accent)' : 'var(--border)', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: remaining === 0 ? 'pointer' : 'not-allowed' }}>
+          {remaining === 0 ? 'Submit ➤' : `${remaining} left to assign`}
+        </button>
+      </div>
+    )
+  }
+
   // Short / long text
   return (
     <TextInput

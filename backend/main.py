@@ -680,6 +680,57 @@ def export_csv(survey_id: str):
 
 # ─── Billing ─────────────────────────────────────────────────────────────────
 
+PLAN_PRICES = {"starter": "$29.00", "pro": "$79.00"}
+
+@app.post("/billing/token-upgrade")
+def token_upgrade(payload: dict):
+    """Token-based dummy payment — upgrades plan and logs the transaction."""
+    user_id = payload.get("user_id")
+    plan    = payload.get("plan")
+    token   = payload.get("token", "").strip()
+
+    if not user_id or plan not in ("starter", "pro"):
+        raise HTTPException(400, "user_id and a valid plan (starter/pro) are required")
+    if not token:
+        raise HTTPException(400, "Payment token is required")
+
+    # Get current plan for logging
+    profile = supabase.table("profiles").select("plan").eq("id", user_id).single().execute().data
+    prev_plan = profile.get("plan", "free") if profile else "free"
+
+    if prev_plan == plan:
+        raise HTTPException(400, f"You are already on the {plan} plan")
+
+    # Update plan in profiles
+    supabase.table("profiles").update({
+        "plan": plan,
+        "plan_status": "active",
+    }).eq("id", user_id).execute()
+
+    # Log the transaction
+    supabase.table("billing_logs").insert({
+        "user_id": user_id,
+        "plan": plan,
+        "prev_plan": prev_plan,
+        "token": token[:8] + "****",   # mask most of token for security
+        "amount": PLAN_PRICES.get(plan, "$0.00"),
+        "status": "success",
+        "note": f"Upgraded from {prev_plan} to {plan} via payment token",
+    }).execute()
+
+    return {"success": True, "plan": plan, "message": f"Successfully upgraded to {plan.capitalize()} plan"}
+
+
+@app.get("/billing/logs")
+def get_billing_logs(user_id: str):
+    """Return billing transaction history for a user."""
+    result = supabase.table("billing_logs").select("*").eq(
+        "user_id", user_id
+    ).order("created_at", desc=True).execute()
+    return result.data
+
+
+
 def _stripe_ready():
     return stripe.api_key is not None and bool(stripe.api_key)
 
