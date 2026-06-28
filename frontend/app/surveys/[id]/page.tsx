@@ -416,7 +416,23 @@ function ShareTab({ surveyId, surveyTitle, status, onPublish }: {
   const mailtoLink = `mailto:?subject=${encodeURIComponent(`Please take our survey: ${surveyTitle}`)}&body=${encodeURIComponent(`Hi,\n\nWe'd love your feedback. Please take a few minutes to fill out our survey:\n\n${respondUrl}\n\nThank you!`)}`
 
   const copy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text)
+    const fallback = () => {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).catch(fallback)
+      } else {
+        fallback()
+      }
+    } catch { fallback() }
     setCopied(key)
     setTimeout(() => setCopied(null), 2000)
   }

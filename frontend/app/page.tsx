@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchSurveys, createSurvey } from '../lib/api'
 import TopBar from '../components/TopBar'
@@ -96,11 +96,14 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (ti
   const [title, setTitle] = useState('')
   const [selectedMethod, setSelectedMethod] = useState('classic')
   const [creating, setCreating] = useState(false)
+  const inFlight = useRef(false)  // sync guard — prevents double-submit before React re-renders
 
   const handleCreate = async () => {
-    if (!title.trim()) return
+    if (!title.trim() || inFlight.current) return
+    inFlight.current = true
     setCreating(true)
     await onCreate(title.trim(), selectedMethod)
+    inFlight.current = false
   }
 
   return (
