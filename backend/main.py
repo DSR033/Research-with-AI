@@ -184,6 +184,33 @@ def submit_response(survey_id: str, payload: dict):
                    for a in payload["answers"]]
         supabase.table("answers").insert(answers).execute()
 
+    # ── Notifications ──────────────────────────────────────────────────────
+    owner_id = survey.get("created_by") if isinstance(survey, dict) else None
+    if owner_id and payload.get("status") == "complete":
+        # Count total completed responses after this one
+        total = supabase.table("responses").select(
+            "id", count="exact"
+        ).eq("survey_id", survey_id).eq("status", "complete").execute().count or 0
+        surv_title = supabase.table("surveys").select("title").eq(
+            "id", survey_id
+        ).single().execute().data.get("title", "Survey")
+        link = f"/surveys/{survey_id}?tab=insights"
+
+        # New response notification
+        _notify(owner_id, "new_response",
+                f'New response on "{surv_title}"',
+                f"You have {total} total response{'s' if total != 1 else ''}.",
+                survey_id=survey_id, link=link)
+
+        # Milestone notifications
+        for milestone in (10, 50, 100, 500, 1000):
+            if total == milestone:
+                _notify(owner_id, "milestone",
+                        f'🎉 {milestone} responses on "{surv_title}"!',
+                        f"Your survey just hit {milestone} completed responses.",
+                        survey_id=survey_id, link=link)
+                break
+
     return {"response_id": response_id}
 
 
@@ -228,6 +255,13 @@ def invite_user(payload: dict):
             or resp.text
         )
         raise HTTPException(resp.status_code, detail)
+
+    # Notify the inviting user (admin/owner who sent the invite)
+    inviter_id = payload.get("inviter_id")
+    if inviter_id:
+        _notify(inviter_id, "team_invite",
+                f"Invite sent to {email}",
+                f"{email} has been invited as {role}. They'll receive a magic-link email.")
 
     return {"invited": email, "role": role, "redirect_to": redirect_to}
 
@@ -279,6 +313,54 @@ def get_results(survey_id: str):
         "complete": sum(1 for r in responses.data if r["status"] == "complete"),
         "partial": sum(1 for r in responses.data if r["status"] == "partial"),
     }
+
+
+# ─── Notifications ────────────────────────────────────────────────────────────
+
+def _notify(user_id: str, type_: str, title: str, message: str = None,
+            survey_id: str = None, link: str = None):
+    """Helper — insert a notification. Silently ignores errors."""
+    try:
+        supabase.table("notifications").insert({
+            "user_id": user_id, "type": type_, "title": title,
+            "message": message, "survey_id": survey_id, "link": link,
+        }).execute()
+    except Exception:
+        pass
+
+
+@app.get("/notifications")
+def list_notifications(user_id: str, limit: int = 20):
+    result = supabase.table("notifications").select("*").eq(
+        "user_id", user_id
+    ).order("created_at", desc=True).limit(limit).execute()
+    return result.data
+
+
+@app.get("/notifications/unread-count")
+def unread_count(user_id: str):
+    result = supabase.table("notifications").select(
+        "id", count="exact"
+    ).eq("user_id", user_id).eq("read", False).execute()
+    return {"count": result.count or 0}
+
+
+@app.patch("/notifications/{notification_id}/read")
+def mark_read(notification_id: str, payload: dict):
+    user_id = payload.get("user_id")
+    supabase.table("notifications").update({"read": True}).eq(
+        "id", notification_id
+    ).eq("user_id", user_id).execute()
+    return {"ok": True}
+
+
+@app.patch("/notifications/read-all")
+def mark_all_read(payload: dict):
+    user_id = payload.get("user_id")
+    supabase.table("notifications").update({"read": True}).eq(
+        "user_id", user_id
+    ).eq("read", False).execute()
+    return {"ok": True}
 
 
 # ─── Analytics ───────────────────────────────────────────────────────────────
@@ -717,6 +799,10 @@ def token_upgrade(payload: dict):
         "status": "success",
         "note": f"Upgraded from {prev_plan} to {plan} via payment token",
     }).execute()
+
+    _notify(user_id, "plan_upgrade",
+            f"Plan upgraded to {plan.capitalize()} 🎉",
+            f"You're now on the {plan.capitalize()} plan ({PLAN_PRICES.get(plan, '')}). Enjoy your new limits!")
 
     return {"success": True, "plan": plan, "message": f"Successfully upgraded to {plan.capitalize()} plan"}
 

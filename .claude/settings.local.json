@@ -76,7 +76,14 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Drivers:', len\\(d['drivers']\\), '| n:', d['n']\\)\")",
       "Bash(venv/bin/python3 add_billing_logs.py)",
       "Bash(curl -s -w \"\\\\n%{http_code}\" \"http://localhost:8000/billing/logs?user_id=a16c2e57-f86b-45c6-9ac0-35aa672e78f7\")",
-      "Bash(curl -s -X POST http://localhost:8000/billing/token-upgrade -H 'Content-Type: application/json' -d '{\"user_id\":\"a16c2e57-f86b-45c6-9ac0-35aa672e78f7\",\"plan\":\"starter\",\"token\":\"PAY-2026-TEST-1234\"}')"
+      "Bash(curl -s -X POST http://localhost:8000/billing/token-upgrade -H 'Content-Type: application/json' -d '{\"user_id\":\"a16c2e57-f86b-45c6-9ac0-35aa672e78f7\",\"plan\":\"starter\",\"token\":\"PAY-2026-TEST-1234\"}')",
+      "Bash(venv/bin/python3 add_notifications.py)",
+      "Bash(grep -n \"return {\\\\\"success\\\\\": True, \\\\\"plan\\\\\"\" /Users/duggu/Claude/Projects/Survey/backend/main.py)",
+      "Bash(curl -s http://localhost:8000/notifications?user_id=a16c2e57-f86b-45c6-9ac0-35aa672e78f7)",
+      "Bash(python3 -c \"import sys,json; print\\('Unread:', json.load\\(sys.stdin\\)['count']\\)\")",
+      "Bash(sleep 3)",
+      "Bash(curl -s http://localhost:8000/notifications?user_id=__TRACKED_VAR__)",
+      "Bash(curl -s http://localhost:8000/notifications/unread-count?user_id=__TRACKED_VAR__)"
     ]
   }
 }
