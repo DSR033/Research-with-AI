@@ -10,6 +10,7 @@ interface NavItem { label: string; href: string }
 const NAV: NavItem[] = [
   { label: 'Surveys', href: '/' },
   { label: 'Templates', href: '/templates' },
+  { label: 'Marketplace', href: '/marketplace' },
   { label: 'Team', href: '/admin/team' },
   { label: 'Billing', href: '/admin/billing' },
 ]

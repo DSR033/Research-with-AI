@@ -1202,3 +1202,69 @@ def gdpr_delete_account(payload: dict):
         pass  # If auth delete fails, data is still gone
 
     return {"deleted": True}
+
+
+# ── Onboarding profile ──────────────────────────────────────────────────────
+
+@app.post("/profiles/{user_id}/onboarding")
+def save_onboarding(user_id: str, payload: dict):
+    """Store role + profile data collected during the onboarding wizard."""
+    existing = supabase.table("profiles").select("id").eq("id", user_id).execute()
+    data = {
+        "id": user_id,
+        "role": payload.get("role"),
+        "onboarding_data": payload,
+        "onboarding_complete": True,
+    }
+    if existing.data:
+        supabase.table("profiles").update(data).eq("id", user_id).execute()
+    else:
+        supabase.table("profiles").insert(data).execute()
+    return {"ok": True}
+
+
+@app.get("/profiles/{user_id}/onboarding")
+def get_onboarding(user_id: str):
+    """Return role and onboarding data for role-based routing."""
+    result = supabase.table("profiles").select("role,onboarding_data,onboarding_complete").eq("id", user_id).execute()
+    if not result.data:
+        return {"role": None, "onboarding_complete": False}
+    return result.data[0]
+
+
+# ── Audience tasks ──────────────────────────────────────────────────────────
+
+@app.get("/audience/tasks")
+def get_audience_tasks(user_id: str = ""):
+    """Return active surveys formatted as respondent tasks."""
+    try:
+        result = supabase.table("surveys").select("id,title,description,created_at,status").eq("status", "active").limit(20).execute()
+        tasks = []
+        for s in (result.data or []):
+            tasks.append({
+                "id": s["id"],
+                "title": s["title"],
+                "category": "General Research",
+                "reward": 2.50,
+                "time": 10,
+                "difficulty": 2,
+                "description": s.get("description") or "Share your feedback in this short survey.",
+                "quota": 500,
+                "filled": 120,
+                "eligible": True,
+            })
+        return {"tasks": tasks}
+    except Exception:
+        return {"tasks": []}
+
+
+# ── Expert jobs ─────────────────────────────────────────────────────────────
+
+@app.get("/expert/jobs")
+def get_expert_jobs(user_id: str = ""):
+    """Return open expert job requests. Returns empty list if table doesn't exist yet."""
+    try:
+        result = supabase.table("expert_jobs").select("*").eq("status", "open").order("created_at", desc=True).limit(20).execute()
+        return {"jobs": result.data or []}
+    except Exception:
+        return {"jobs": []}

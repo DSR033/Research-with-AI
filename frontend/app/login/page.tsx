@@ -36,7 +36,10 @@ export default function LoginPage() {
     return () => clearTimeout(t)
   }, [cooldown])
 
-  const switchMode = (m: Mode) => { setMode(m); setError(''); setMessage(''); if (m !== 'forgot') setCooldown(0) }
+  const switchMode = (m: Mode) => {
+    if (m === 'signup') { router.push('/onboarding'); return }
+    setMode(m); setError(''); setMessage(''); if (m !== 'forgot') setCooldown(0)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,16 +51,6 @@ export default function LoginPage() {
       })
       if (error) setError(error.message)
       else { setMessage('Password reset email sent! Check your inbox and follow the link to set a new password.'); setCooldown(120) }
-    } else if (mode === 'signup') {
-      const { error } = await supabase.auth.signUp({
-        email, password,
-        options: {
-          data: { full_name: fullName },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=${redirect}`,
-        },
-      })
-      if (error) setError(error.message)
-      else setMessage('Check your email for a confirmation link to complete sign-up.')
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) setError(error.message)
