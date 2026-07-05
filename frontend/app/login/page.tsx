@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState(errorParam === 'auth_callback_failed' ? 'Authentication failed. Please try again.' : '')
   const [message, setMessage]   = useState(deleted ? 'Your account has been deleted. Thank you for using SurveyAI.' : '')
+  const [cooldown, setCooldown] = useState(0)  // seconds remaining before resend allowed
 
   const supabase = createClient()
 
@@ -28,7 +29,14 @@ export default function LoginPage() {
     })
   }, [])
 
-  const switchMode = (m: Mode) => { setMode(m); setError(''); setMessage('') }
+  // Countdown timer for resend cooldown
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
+
+  const switchMode = (m: Mode) => { setMode(m); setError(''); setMessage(''); if (m !== 'forgot') setCooldown(0) }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,7 +47,7 @@ export default function LoginPage() {
         redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
       })
       if (error) setError(error.message)
-      else setMessage('Password reset email sent! Check your inbox and follow the link to set a new password.')
+      else { setMessage('Password reset email sent! Check your inbox and follow the link to set a new password.'); setCooldown(120) }
     } else if (mode === 'signup') {
       const { error } = await supabase.auth.signUp({
         email, password,
@@ -141,8 +149,26 @@ export default function LoginPage() {
             {error   && <div style={{ fontSize: 13, color: '#ef4444', background: '#fef2f2', borderRadius: 8, padding: '10px 14px' }}>{error}</div>}
             {message && <div style={{ fontSize: 13, color: '#16a34a', background: '#f0fdf4', borderRadius: 8, padding: '10px 14px' }}>{message}</div>}
 
-            {/* Don't show submit if reset email already sent */}
-            {!(mode === 'forgot' && message) && (
+            {/* Submit button — for forgot mode, show resend with cooldown after first send */}
+            {mode === 'forgot' && message ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+                <button
+                  type="submit"
+                  disabled={loading || cooldown > 0}
+                  className="btn"
+                  style={{ width: '100%', padding: '12px 0', fontSize: 15, justifyContent: 'center', opacity: cooldown > 0 ? 0.6 : 1 }}
+                >
+                  {loading ? <><span className="spinner" />Sending…</> : cooldown > 0
+                    ? `Resend in ${Math.floor(cooldown / 60)}:${String(cooldown % 60).padStart(2, '0')}`
+                    : 'Resend reset link →'}
+                </button>
+                {cooldown > 0 && (
+                  <div style={{ textAlign: 'center', fontSize: 12, color: '#a1a1aa' }}>
+                    Didn&apos;t receive it? You can resend in {Math.floor(cooldown / 60)}:{String(cooldown % 60).padStart(2, '0')}
+                  </div>
+                )}
+              </div>
+            ) : (
               <button type="submit" disabled={loading} className="btn" style={{ marginTop: 6, width: '100%', padding: '12px 0', fontSize: 15, justifyContent: 'center' }}>
                 {loading ? (
                   <><span className="spinner" />{mode === 'signup' ? 'Creating…' : mode === 'forgot' ? 'Sending…' : 'Signing in…'}</>
