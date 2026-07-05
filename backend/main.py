@@ -999,50 +999,153 @@ Generate 4-8 questions. Make them specific, unbiased, and directly relevant to t
     return {"title": data["title"], "questions": created}
 
 
-# ─── AI: Expert Review ───────────────────────────────────────────────────────
+# ─── Expert Review (rule-based) ──────────────────────────────────────────────
+
+BIAS_PHRASES = [
+    "don't you think", "don't you agree", "wouldn't you", "isn't it obvious",
+    "as we all know", "everyone knows", "of course", "obviously", "surely",
+    "don't you feel", "clearly you", "needless to say",
+]
+ABSOLUTE_WORDS = ["always", "never", "all", "every", "none", "everyone", "nobody"]
+VAGUE_WORDS    = ["something", "stuff", "things", "etc", "whatever", "anything", "various"]
+PII_SIGNALS    = ["email", "phone", "address", "date of birth", "dob", "ssn", "passport",
+                  "national id", "social security", "credit card", "bank account"]
+
+WEIGHTS = {"Clarity": 30, "Structure": 25, "Bias & Fairness": 20, "Logic": 15, "Compliance": 10}
+
+
+def _rule_review(questions: list, survey_title: str = "") -> dict:
+    findings: list[dict] = []
+    scores = {k: 100 for k in WEIGHTS}
+    n = len(questions)
+
+    # ── Structure ──────────────────────────────────────────────────────────────
+    if n == 0:
+        findings.append({"severity": "warning", "category": "Structure",
+                         "text": "No questions found. Add at least one question before reviewing."})
+        scores["Structure"] = 0
+    elif n > 20:
+        findings.append({"severity": "warning", "category": "Structure",
+                         "text": f"Survey has {n} questions. Surveys over 20 questions typically see completion rates drop below 50%."})
+        scores["Structure"] -= 25
+    elif n > 12:
+        findings.append({"severity": "suggestion", "category": "Structure",
+                         "text": f"Survey has {n} questions. Under 12 is the sweet spot for completion rates above 80%."})
+        scores["Structure"] -= 10
+    else:
+        findings.append({"severity": "pass", "category": "Structure",
+                         "text": f"Survey length ({n} questions) is within the recommended range for 80%+ completion."})
+
+    if n > 0:
+        req = sum(1 for q in questions if q.get("required"))
+        if req == 0 and n > 2:
+            findings.append({"severity": "suggestion", "category": "Structure",
+                             "text": "No required questions. Mark at least key questions as required to ensure data completeness."})
+            scores["Structure"] -= 8
+        elif req == n and n > 4:
+            findings.append({"severity": "suggestion", "category": "Structure",
+                             "text": "Every question is required. Allowing a few optional questions reduces drop-off."})
+            scores["Structure"] -= 5
+        else:
+            findings.append({"severity": "pass", "category": "Structure",
+                             "text": "Required-field balance looks good — key questions are required, others optional."})
+
+    # ── Per-question checks ────────────────────────────────────────────────────
+    seen_titles: set[str] = set()
+    for i, q in enumerate(questions):
+        qnum  = i + 1
+        title = (q.get("title") or "").strip()
+        tl    = title.lower()
+        qtype = q.get("type", "")
+
+        # Clarity — empty / too short / too long
+        if not title:
+            findings.append({"severity": "warning", "category": "Clarity",
+                             "text": f"Q{qnum}: Question has no text. Add clear wording before publishing."})
+            scores["Clarity"] = max(0, scores["Clarity"] - 15)
+        elif len(title.split()) < 3:
+            findings.append({"severity": "suggestion", "category": "Clarity",
+                             "text": f"Q{qnum}: Very short question text ("{title}"). Ensure it's unambiguous to respondents."})
+            scores["Clarity"] = max(0, scores["Clarity"] - 6)
+        elif len(title) > 220:
+            findings.append({"severity": "suggestion", "category": "Clarity",
+                             "text": f"Q{qnum}: Long question ({len(title)} chars). Shorter questions reduce cognitive load."})
+            scores["Clarity"] = max(0, scores["Clarity"] - 5)
+
+        # Clarity — vague words
+        for w in VAGUE_WORDS:
+            if w in tl:
+                findings.append({"severity": "suggestion", "category": "Clarity",
+                                 "text": f"Q{qnum}: Vague term "{w}" detected. Be specific to get actionable answers."})
+                scores["Clarity"] = max(0, scores["Clarity"] - 5)
+                break
+
+        # Bias — leading phrases
+        for phrase in BIAS_PHRASES:
+            if phrase in tl:
+                findings.append({"severity": "warning", "category": "Bias & Fairness",
+                                 "text": f"Q{qnum}: Leading phrase "{phrase}" found. Rephrase to neutral wording."})
+                scores["Bias & Fairness"] = max(0, scores["Bias & Fairness"] - 22)
+                break
+
+        # Bias — absolute words
+        for w in ABSOLUTE_WORDS:
+            if f" {w} " in f" {tl} " or tl.startswith(w + " ") or tl.endswith(" " + w):
+                findings.append({"severity": "suggestion", "category": "Bias & Fairness",
+                                 "text": f"Q{qnum}: Absolute term "{w}" may not reflect nuanced experience. Consider softer phrasing."})
+                scores["Bias & Fairness"] = max(0, scores["Bias & Fairness"] - 8)
+                break
+
+        # Logic — duplicate text
+        key = tl.strip("?. ")
+        if key and key in seen_titles:
+            findings.append({"severity": "warning", "category": "Logic",
+                             "text": f"Q{qnum}: Duplicate question text detected. Remove or differentiate it."})
+            scores["Logic"] = max(0, scores["Logic"] - 18)
+        seen_titles.add(key)
+
+    # Bias pass if no issues
+    if not any(f["category"] == "Bias & Fairness" and f["severity"] != "pass" for f in findings):
+        findings.append({"severity": "pass", "category": "Bias & Fairness",
+                         "text": "No leading phrases or absolute language detected. Questions appear neutrally worded."})
+
+    # Logic pass if no issues
+    if not any(f["category"] == "Logic" and f["severity"] != "pass" for f in findings):
+        findings.append({"severity": "pass", "category": "Logic",
+                         "text": "No duplicate or conflicting questions detected."})
+
+    # Clarity pass if no issues
+    if not any(f["category"] == "Clarity" and f["severity"] in ("warning", "suggestion") for f in findings):
+        findings.append({"severity": "pass", "category": "Clarity",
+                         "text": "All questions are clearly worded and appropriately sized."})
+
+    # ── Compliance ─────────────────────────────────────────────────────────────
+    all_text = " ".join((q.get("title") or "") for q in questions).lower() + " " + survey_title.lower()
+    has_pii = any(sig in all_text for sig in PII_SIGNALS)
+    if has_pii:
+        findings.append({"severity": "suggestion", "category": "Compliance",
+                         "text": "Survey appears to collect personal data. Ensure a consent statement and privacy notice link are included."})
+        scores["Compliance"] -= 20
+    else:
+        findings.append({"severity": "pass", "category": "Compliance",
+                         "text": "No obvious PII collection detected. Good for respondent privacy."})
+
+    # ── Overall score ──────────────────────────────────────────────────────────
+    overall = round(sum(scores[c] * WEIGHTS[c] / 100 for c in WEIGHTS))
+    categories = [{"name": c, "score": scores[c], "weight": WEIGHTS[c]} for c in WEIGHTS]
+
+    return {"overall_score": overall, "categories": categories, "findings": findings}
+
 
 @app.post("/surveys/{survey_id}/expert-review")
 def expert_review(survey_id: str):
-    # Fetch survey + questions
-    survey = supabase.table("surveys").select("title").eq("id", survey_id).single().execute().data
-    questions = supabase.table("questions").select("title, type, required").eq("survey_id", survey_id).order("position").execute().data
-
-    if not questions:
-        return {"findings": [{"severity": "warning", "text": "No questions to review yet."}]}
-
-    q_list = "\n".join(f"{i+1}. [{q['type']}] {q['title']}" for i, q in enumerate(questions))
-
-    response = ai.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=2048,
-        system="""You are a survey methodology expert. Review surveys for:
-- Leading or biased questions
-- Clarity and specificity
-- Appropriate question types
-- Survey length and flow
-- Missing essential questions
-
-Return ONLY valid JSON (no markdown) with this structure:
-{
-  "findings": [
-    {"severity": "warning|suggestion|pass", "text": "Finding description"}
-  ],
-  "overall_score": 1-10,
-  "summary": "One sentence overall assessment"
-}
-
-Be specific and actionable. 3-6 findings is ideal.""",
-        messages=[{
-            "role": "user",
-            "content": f"Survey: \"{survey['title']}\"\n\nQuestions:\n{q_list}"
-        }],
-    )
-
-    text = next(b.text for b in response.content if b.type == "text")
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return {"findings": [{"severity": "warning", "text": text}], "overall_score": 0, "summary": ""}
+        survey = supabase.table("surveys").select("title").eq("id", survey_id).single().execute().data
+        questions = supabase.table("questions").select("title, type, required").eq("survey_id", survey_id).order("position").execute().data
+    except Exception:
+        survey = {"title": ""}
+        questions = []
+    return _rule_review(questions or [], (survey or {}).get("title", ""))
 
 
 # ─── AI: Ask Your Data ───────────────────────────────────────────────────────

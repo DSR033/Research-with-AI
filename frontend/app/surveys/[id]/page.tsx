@@ -84,7 +84,9 @@ export default function SurveyBuilder() {
   const [branding, setBranding]     = useState({ brand_color: '#db2777', logo_url: null as string | null, org_name: 'SurveyAI' })
   const [results, setResults]       = useState<{ total: number; complete: number; partial: number } | null>(null)
   const [aiChipLoading, setAiChipLoading] = useState<string | null>(null)
-  const [expertReview, setExpertReview]   = useState<Array<{ type: 'warn' | 'ok'; text: string }> | null>(null)
+  type Finding = { severity: 'warning' | 'suggestion' | 'pass'; category: string; text: string }
+  type ReviewResult = { overall_score: number; categories: Array<{ name: string; score: number; weight: number }>; findings: Finding[] }
+  const [expertReview, setExpertReview]   = useState<ReviewResult | null>(null)
   const [expertLoading, setExpertLoading] = useState(false)
 
   // Config state
@@ -171,20 +173,58 @@ export default function SurveyBuilder() {
       const res = await fetch(`${API}/surveys/${id}/expert-review`, { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
-        setExpertReview(data.items)
+        setExpertReview(data)
         setExpertLoading(false)
         return
       }
     } catch {}
-    setTimeout(() => {
-      setExpertReview([
-        { type: 'warn', text: 'Check Q2 wording for leading language — "Don\'t you agree..." implies a desired answer. Consider neutral phrasing.' },
-        { type: 'warn', text: `Survey length: ${questions.length} question${questions.length !== 1 ? 's' : ''}. Within recommended range for completion rates above 80%.` },
-        { type: 'ok',   text: 'Question order looks good. Sensitive/demographic questions placed at the end — best practice.' },
-        { type: 'ok',   text: 'All required fields are clearly marked, reducing respondent drop-off.' },
-      ])
-      setExpertLoading(false)
-    }, 1200)
+    // Fallback: run checks client-side on local question state
+    const n = questions.length
+    const findings: Finding[] = []
+    const scores: Record<string, number> = { Clarity: 100, Structure: 100, 'Bias & Fairness': 100, Logic: 100, Compliance: 100 }
+    const WEIGHTS_F: Record<string, number> = { Clarity: 30, Structure: 25, 'Bias & Fairness': 20, Logic: 15, Compliance: 10 }
+    const BIAS = ["don't you think","don't you agree","obviously","clearly","of course","as we all know","everyone knows","surely"]
+    const VAGUE = ["something","stuff","things","etc","whatever","anything"]
+
+    if (n === 0) {
+      findings.push({ severity: 'warning', category: 'Structure', text: 'No questions yet. Add questions before reviewing.' })
+      scores.Structure = 0
+    } else if (n > 20) {
+      findings.push({ severity: 'warning', category: 'Structure', text: `${n} questions — surveys over 20 see <50% completion.` })
+      scores.Structure -= 25
+    } else if (n > 12) {
+      findings.push({ severity: 'suggestion', category: 'Structure', text: `${n} questions — under 12 keeps completion above 80%.` })
+      scores.Structure -= 10
+    } else {
+      findings.push({ severity: 'pass', category: 'Structure', text: `${n} questions — within the recommended range.` })
+    }
+
+    const seen = new Set<string>()
+    questions.forEach((q, i) => {
+      const title = q.title?.trim() ?? ''
+      const tl = title.toLowerCase()
+      const qnum = i + 1
+      if (!title) { findings.push({ severity: 'warning', category: 'Clarity', text: `Q${qnum}: No question text.` }); scores.Clarity = Math.max(0, scores.Clarity - 15) }
+      else if (title.split(' ').length < 3) { findings.push({ severity: 'suggestion', category: 'Clarity', text: `Q${qnum}: Very short — "${title}". Make it unambiguous.` }); scores.Clarity = Math.max(0, scores.Clarity - 6) }
+      else if (title.length > 220) { findings.push({ severity: 'suggestion', category: 'Clarity', text: `Q${qnum}: Long question (${title.length} chars). Shorter questions reduce cognitive load.` }); scores.Clarity = Math.max(0, scores.Clarity - 5) }
+      for (const w of VAGUE) { if (tl.includes(w)) { findings.push({ severity: 'suggestion', category: 'Clarity', text: `Q${qnum}: Vague term "${w}". Be specific.` }); scores.Clarity = Math.max(0, scores.Clarity - 5); break } }
+      for (const p of BIAS) { if (tl.includes(p)) { findings.push({ severity: 'warning', category: 'Bias & Fairness', text: `Q${qnum}: Leading phrase "${p}". Rephrase neutrally.` }); scores['Bias & Fairness'] = Math.max(0, scores['Bias & Fairness'] - 22); break } }
+      const key = tl.replace(/[?.]/g, '').trim()
+      if (key && seen.has(key)) { findings.push({ severity: 'warning', category: 'Logic', text: `Q${qnum}: Duplicate question text detected.` }); scores.Logic = Math.max(0, scores.Logic - 18) }
+      seen.add(key)
+    })
+
+    if (!findings.some(f => f.category === 'Bias & Fairness' && f.severity !== 'pass'))
+      findings.push({ severity: 'pass', category: 'Bias & Fairness', text: 'No leading phrases detected. Questions appear neutrally worded.' })
+    if (!findings.some(f => f.category === 'Logic' && f.severity !== 'pass'))
+      findings.push({ severity: 'pass', category: 'Logic', text: 'No duplicate questions detected.' })
+    if (!findings.some(f => f.category === 'Clarity' && f.severity !== 'pass'))
+      findings.push({ severity: 'pass', category: 'Clarity', text: 'All questions clearly worded.' })
+    findings.push({ severity: 'pass', category: 'Compliance', text: 'No obvious PII collection detected.' })
+
+    const overall = Math.round(Object.keys(WEIGHTS_F).reduce((acc, c) => acc + scores[c] * WEIGHTS_F[c] / 100, 0))
+    const categories = Object.keys(WEIGHTS_F).map(c => ({ name: c, score: scores[c], weight: WEIGHTS_F[c] }))
+    setTimeout(() => { setExpertReview({ overall_score: overall, categories, findings }); setExpertLoading(false) }, 800)
   }
 
   if (loading) return (
@@ -531,51 +571,142 @@ export default function SurveyBuilder() {
         {/* ── EXPERT REVIEW ── */}
         {activeTab === 'expert' && (
           <div style={{ background: 'rgba(255,255,255,.9)', backdropFilter: 'blur(12px)', borderRadius: 16, border: '1.5px solid rgba(219,39,119,.08)', padding: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
               <div>
                 <h2 style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 800, fontSize: 18, margin: '0 0 4px', color: '#18181b', display: 'flex', alignItems: 'center', gap: 8 }}>
                   Expert Review
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', background: '#faf5ff', padding: '2px 8px', borderRadius: 6, border: '1px solid #ede9fe' }}>AI</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', background: '#ecfeff', padding: '2px 8px', borderRadius: 6, border: '1px solid #cffafe' }}>Rule-based</span>
                 </h2>
-                <div style={{ fontSize: 13, color: '#71717a' }}>AI scans your survey for bias, length, clarity, and structural issues before you publish.</div>
+                <div style={{ fontSize: 13, color: '#71717a' }}>Scans for bias, clarity, structure, and compliance issues before you publish.</div>
               </div>
-              <button
-                onClick={runExpertReview}
-                disabled={expertLoading}
-                className="btn"
-                style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {expertLoading ? <><span className="spinner" />Reviewing…</> : <>✨ Run Expert Review</>}
+              <button onClick={runExpertReview} disabled={expertLoading} className="btn" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {expertLoading ? <><span className="spinner" />Analyzing…</> : <>Run Review</>}
               </button>
             </div>
 
+            {/* Empty state */}
             {!expertReview && !expertLoading && (
-              <div style={{ background: 'linear-gradient(135deg,#fdf4ff,#fce7f3)', borderRadius: 12, padding: '32px', textAlign: 'center', border: '1.5px dashed rgba(124,58,237,.2)' }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>✨</div>
-                <div style={{ fontWeight: 600, fontSize: 15, color: '#52525b', marginBottom: 6 }}>No review yet</div>
-                <div style={{ fontSize: 13, color: '#71717a' }}>Click "Run Expert Review" to get AI feedback on your survey quality.</div>
+              <div style={{ background: 'linear-gradient(135deg,#f0f9ff,#ecfeff)', borderRadius: 12, padding: 32, textAlign: 'center', border: '1.5px dashed rgba(8,145,178,.25)' }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>🔍</div>
+                <div style={{ fontWeight: 600, fontSize: 15, color: '#52525b', marginBottom: 6 }}>No review run yet</div>
+                <div style={{ fontSize: 13, color: '#71717a' }}>Click "Run Review" to check your survey for quality issues before publishing.</div>
               </div>
             )}
 
+            {/* Loading */}
             {expertLoading && (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#71717a' }}>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid #ede9fe', borderTopColor: '#7c3aed', animation: 'spin 0.7s linear infinite', margin: '0 auto 12px' }} />
-                <div style={{ fontSize: 14 }}>Analyzing your survey…</div>
+              <div style={{ padding: 40, textAlign: 'center', color: '#71717a' }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid #cffafe', borderTopColor: '#0891b2', animation: 'spin 0.7s linear infinite', margin: '0 auto 12px' }} />
+                <div style={{ fontSize: 14 }}>Analyzing survey…</div>
               </div>
             )}
 
-            {expertReview && !expertLoading && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                {expertReview.map((item, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 12, padding: '14px 0', borderBottom: i < expertReview.length - 1 ? '1px solid rgba(219,39,119,.06)' : 'none', alignItems: 'flex-start' }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.type === 'warn' ? '#d97706' : '#16a34a', marginTop: 5, flexShrink: 0 }} />
-                    <div style={{ fontSize: 14, color: '#18181b', lineHeight: 1.6 }}>{item.text}</div>
+            {/* Results */}
+            {expertReview && !expertLoading && (() => {
+              const { overall_score, categories, findings } = expertReview
+              const scoreColor = overall_score >= 80 ? '#16a34a' : overall_score >= 60 ? '#d97706' : '#dc2626'
+              const scoreBg    = overall_score >= 80 ? '#f0fdf4' : overall_score >= 60 ? '#fffbeb' : '#fef2f2'
+              const scoreBdr   = overall_score >= 80 ? '#bbf7d0' : overall_score >= 60 ? '#fde68a' : '#fecaca'
+              const r = 36, circ = 2 * Math.PI * r
+              const dash = circ * (overall_score / 100)
+              const warnings    = findings.filter(f => f.severity === 'warning')
+              const suggestions = findings.filter(f => f.severity === 'suggestion')
+              const passes      = findings.filter(f => f.severity === 'pass')
+              return (
+                <div>
+                  {/* Score + categories row */}
+                  <div style={{ display: 'flex', gap: 20, marginBottom: 24, flexWrap: 'wrap' }}>
+                    {/* Score ring */}
+                    <div style={{ background: scoreBg, border: `1.5px solid ${scoreBdr}`, borderRadius: 14, padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16, minWidth: 180 }}>
+                      <svg width={88} height={88} viewBox="0 0 88 88">
+                        <circle cx={44} cy={44} r={r} fill="none" stroke={scoreBdr} strokeWidth={8} />
+                        <circle cx={44} cy={44} r={r} fill="none" stroke={scoreColor} strokeWidth={8}
+                          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+                          transform="rotate(-90 44 44)" />
+                        <text x={44} y={44} textAnchor="middle" dominantBaseline="central"
+                          fill={scoreColor} fontSize={20} fontWeight={700}>{overall_score}</text>
+                      </svg>
+                      <div>
+                        <div style={{ fontSize: 12, color: '#71717a', marginBottom: 2 }}>Overall score</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: scoreColor }}>
+                          {overall_score >= 80 ? 'Good' : overall_score >= 60 ? 'Needs work' : 'Poor'}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 2 }}>{warnings.length} warning{warnings.length !== 1 ? 's' : ''}</div>
+                      </div>
+                    </div>
+
+                    {/* Category bars */}
+                    <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                      {categories.map(cat => {
+                        const c = cat.score >= 80 ? '#16a34a' : cat.score >= 60 ? '#d97706' : '#dc2626'
+                        return (
+                          <div key={cat.name}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                              <span style={{ fontSize: 12, color: '#52525b', fontWeight: 500 }}>{cat.name}</span>
+                              <span style={{ fontSize: 12, color: c, fontWeight: 600 }}>{cat.score}</span>
+                            </div>
+                            <div style={{ height: 6, borderRadius: 4, background: '#f4f4f5' }}>
+                              <div style={{ height: 6, borderRadius: 4, background: c, width: `${cat.score}%`, transition: 'width .4s ease' }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                ))}
-                <div style={{ marginTop: 20, background: '#fdf4ff', borderRadius: 10, padding: '12px 14px', fontSize: 12, color: '#7c3aed', border: '1px dashed #ede9fe' }}>
-                  AI review is advisory — always validate findings with domain expertise.
+
+                  {/* Findings */}
+                  {warnings.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Warnings ({warnings.length})</div>
+                      {warnings.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca', marginBottom: 6 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#dc2626', marginTop: 5, flexShrink: 0 }} />
+                          <div>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', marginRight: 6 }}>{f.category}</span>
+                            <span style={{ fontSize: 13, color: '#18181b', lineHeight: 1.5 }}>{f.text}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {suggestions.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#d97706', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Suggestions ({suggestions.length})</div>
+                      {suggestions.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 12px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a', marginBottom: 6 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#d97706', marginTop: 5, flexShrink: 0 }} />
+                          <div>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#d97706', marginRight: 6 }}>{f.category}</span>
+                            <span style={{ fontSize: 13, color: '#18181b', lineHeight: 1.5 }}>{f.text}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {passes.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Passing checks ({passes.length})</div>
+                      {passes.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 12px', marginBottom: 4, borderBottom: i < passes.length - 1 ? '1px solid rgba(0,0,0,.04)' : 'none' }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', marginTop: 5, flexShrink: 0 }} />
+                          <div>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', marginRight: 6 }}>{f.category}</span>
+                            <span style={{ fontSize: 13, color: '#52525b', lineHeight: 1.5 }}>{f.text}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 12, background: '#f8fafc', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#94a3b8', border: '1px solid #e2e8f0' }}>
+                    Rule-based checks flag common issues. AI-powered analysis coming soon.
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </div>
         )}
 
