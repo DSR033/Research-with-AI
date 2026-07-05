@@ -130,16 +130,22 @@ export default function TopBar({ activeLabel }: { activeLabel?: string }) {
   const active = activeLabel ?? (pathname === '/' ? 'Surveys' : NAV.find(n => n.href !== '/' && pathname.startsWith(n.href))?.label)
 
   return (
-    <div className="topbar-inner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card)', borderBottom: '1px solid var(--border)', padding: '12px 24px', position: 'sticky', top: 0, zIndex: 40 }}>
+    <div className="topbar-inner" style={{ display: 'flex', alignItems: 'center', gap: 0, background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(219,39,119,.12)', padding: '0 24px', height: 62, position: 'sticky', top: 0, zIndex: 40 }}>
 
-      <div onClick={() => router.push('/')} style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent)', cursor: 'pointer' }}>
-        SurveyAI
+      {/* Logo */}
+      <div onClick={() => router.push('/')} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', flexShrink: 0 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#db2777,#be185d)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(219,39,119,.35)' }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </div>
+        <span style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 800, fontSize: 18, letterSpacing: '-.02em', color: '#18181b' }}>SurveyAI</span>
       </div>
 
-      <div className="topbar-nav" style={{ display: 'flex', gap: 24, fontSize: 14 }}>
+      <div style={{ width: 1, height: 28, background: '#e4e4e7', margin: '0 18px', flexShrink: 0 }} />
+
+      <div className="topbar-nav" style={{ display: 'flex', gap: 2, flex: 1 }}>
         {NAV.map(n => (
           <span key={n.label} onClick={() => router.push(n.href)}
-            style={{ cursor: 'pointer', color: active === n.label ? 'var(--accent)' : 'var(--grey)', fontWeight: active === n.label ? 600 : 400 }}>
+            style={{ cursor: 'pointer', padding: '7px 12px', borderRadius: 8, color: active === n.label ? 'var(--accent)' : '#52525b', fontWeight: active === n.label ? 700 : 500, background: active === n.label ? '#fdf2f8' : 'transparent', fontSize: 14, whiteSpace: 'nowrap' }}>
             {n.label}
           </span>
         ))}
@@ -211,7 +217,7 @@ export default function TopBar({ activeLabel }: { activeLabel?: string }) {
         {/* ── User avatar + dropdown ── */}
         <div ref={menuRef} style={{ position: 'relative' }}>
           <div onClick={() => { setMenuOpen(o => !o); setBellOpen(false) }}
-            style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>
+            style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg,#db2777,#be185d)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, cursor: 'pointer', userSelect: 'none', fontFamily: "'Schibsted Grotesk', system-ui", boxShadow: '0 2px 8px rgba(219,39,119,.35)' }}>
             {initials}
           </div>
 

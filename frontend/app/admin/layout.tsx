@@ -9,6 +9,7 @@ const NAV = [
   { href: '/admin/team', icon: '👥', label: 'Team & Roles' },
   { href: '/admin/settings', icon: '⚙️', label: 'Org Settings' },
   { href: '/admin/usage', icon: '📊', label: 'Usage & Costs' },
+  { href: '/admin/gdpr', icon: '🔒', label: 'Privacy & Data' },
 ]
 
 const ADMIN_ROLES = ['owner', 'admin']

@@ -1103,3 +1103,102 @@ Keep it conversational and concise (under 25 words). Return only the question, n
 
     text = next(b.text for b in response.content if b.type == "text").strip()
     return {"followup": text}
+
+
+# ─── GDPR ─────────────────────────────────────────────────────────────────────
+
+@app.get("/gdpr/export")
+def gdpr_export(user_id: str, format: str = "json"):
+    """Export all data for a user (surveys, questions, responses, profile)."""
+    if not user_id:
+        raise HTTPException(400, "user_id required")
+
+    profile = supabase.table("profiles").select("*").eq("id", user_id).execute().data
+    surveys = supabase.table("surveys").select("*").eq("created_by", user_id).execute().data
+    survey_ids = [s["id"] for s in surveys]
+
+    questions = []
+    responses = []
+    answers = []
+    if survey_ids:
+        questions = supabase.table("questions").select("*").in_("survey_id", survey_ids).execute().data
+        responses = supabase.table("responses").select("*").in_("survey_id", survey_ids).execute().data
+        response_ids = [r["id"] for r in responses]
+        if response_ids:
+            answers = supabase.table("answers").select("*").in_("response_id", response_ids).execute().data
+
+    payload = {
+        "exported_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "user_id": user_id,
+        "profile": profile[0] if profile else {},
+        "surveys": surveys,
+        "questions": questions,
+        "responses": responses,
+        "answers": answers,
+    }
+
+    if format == "csv":
+        output = io.StringIO()
+        w = csv.writer(output)
+        # Profile
+        w.writerow(["=== PROFILE ==="])
+        if profile:
+            w.writerow(list(profile[0].keys()))
+            w.writerow(list(profile[0].values()))
+        w.writerow([])
+        # Surveys
+        w.writerow(["=== SURVEYS ==="])
+        if surveys:
+            w.writerow(list(surveys[0].keys()))
+            for s in surveys:
+                w.writerow(list(s.values()))
+        w.writerow([])
+        # Responses
+        w.writerow(["=== RESPONSES ==="])
+        if responses:
+            w.writerow(list(responses[0].keys()))
+            for r in responses:
+                w.writerow(list(r.values()))
+        w.writerow([])
+        # Answers
+        w.writerow(["=== ANSWERS ==="])
+        if answers:
+            w.writerow(list(answers[0].keys()))
+            for a in answers:
+                w.writerow(list(a.values()))
+
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="surveyai_data_{user_id[:8]}.csv"'},
+        )
+
+    return StreamingResponse(
+        iter([json.dumps(payload, indent=2, default=str)]),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="surveyai_data_{user_id[:8]}.json"'},
+    )
+
+
+@app.delete("/gdpr/delete-account")
+def gdpr_delete_account(payload: dict):
+    """Delete all data for a user. Surveys and responses cascade from DB constraints."""
+    user_id = payload.get("user_id", "").strip()
+    confirm = payload.get("confirm", "")
+    if not user_id:
+        raise HTTPException(400, "user_id required")
+    if confirm != "DELETE MY ACCOUNT":
+        raise HTTPException(400, "Confirmation text does not match")
+
+    # Delete surveys (responses/answers cascade via FK)
+    supabase.table("surveys").delete().eq("created_by", user_id).execute()
+    # Delete profile
+    supabase.table("profiles").delete().eq("id", user_id).execute()
+    # Delete auth user via admin API
+    try:
+        supabase.auth.admin.delete_user(user_id)
+    except Exception:
+        pass  # If auth delete fails, data is still gone
+
+    return {"deleted": True}
