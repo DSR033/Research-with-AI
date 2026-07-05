@@ -3,14 +3,16 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '../../lib/supabase-browser'
 
+type Mode = 'signin' | 'signup' | 'forgot'
+
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirect    = searchParams.get('redirect') ?? '/'
-  const errorParam  = searchParams.get('error')
-  const deleted     = searchParams.get('deleted')
+  const redirect   = searchParams.get('redirect') ?? '/'
+  const errorParam = searchParams.get('error')
+  const deleted    = searchParams.get('deleted')
 
-  const [mode, setMode]         = useState<'signin' | 'signup'>('signin')
+  const [mode, setMode]         = useState<Mode>('signin')
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -26,13 +28,19 @@ export default function LoginPage() {
     })
   }, [])
 
+  const switchMode = (m: Mode) => { setMode(m); setError(''); setMessage('') }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
-    setMessage('')
-    setLoading(true)
+    setError(''); setMessage(''); setLoading(true)
 
-    if (mode === 'signup') {
+    if (mode === 'forgot') {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+      })
+      if (error) setError(error.message)
+      else setMessage('Password reset email sent! Check your inbox and follow the link to set a new password.')
+    } else if (mode === 'signup') {
       const { error } = await supabase.auth.signUp({
         email, password,
         options: {
@@ -48,6 +56,12 @@ export default function LoginPage() {
       else { router.push(redirect); router.refresh() }
     }
     setLoading(false)
+  }
+
+  const headerText: Record<Mode, { title: string; sub: string }> = {
+    signin: { title: 'Welcome back',     sub: 'Sign in to your SurveyAI account' },
+    signup: { title: 'Create account',   sub: 'Start building better surveys for free' },
+    forgot: { title: 'Reset password',   sub: "We'll email you a link to set a new password" },
   }
 
   return (
@@ -67,59 +81,94 @@ export default function LoginPage() {
         {/* Gradient header */}
         <div style={{ background: 'linear-gradient(135deg,#db2777,#be185d)', padding: '24px 32px 20px', textAlign: 'center' }}>
           <div style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 800, fontSize: 21, color: '#fff', letterSpacing: '-.02em' }}>
-            {mode === 'signin' ? 'Welcome back' : 'Create account'}
+            {headerText[mode].title}
           </div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,.75)', marginTop: 4 }}>
-            {mode === 'signin' ? 'Sign in to your SurveyAI account' : 'Start building better surveys for free'}
+            {headerText[mode].sub}
           </div>
         </div>
 
         <div style={{ padding: '28px 32px' }}>
-          {/* Mode tabs */}
-          <div style={{ display: 'flex', borderBottom: '1px solid #f1f1f4', marginBottom: 24 }}>
-            {(['signin', 'signup'] as const).map(m => (
-              <button key={m} onClick={() => { setMode(m); setError(''); setMessage('') }}
-                style={{ flex: 1, padding: '9px 0', fontSize: 14, fontWeight: 600, border: 'none', background: 'transparent', cursor: 'pointer', color: mode === m ? '#db2777' : '#71717a', borderBottom: `2px solid ${mode === m ? '#db2777' : 'transparent'}`, marginBottom: -1 }}>
-                {m === 'signin' ? 'Sign in' : 'Create account'}
-              </button>
-            ))}
-          </div>
+          {/* Mode tabs — only for signin/signup */}
+          {mode !== 'forgot' && (
+            <div style={{ display: 'flex', borderBottom: '1px solid #f1f1f4', marginBottom: 24 }}>
+              {(['signin', 'signup'] as const).map(m => (
+                <button key={m} onClick={() => switchMode(m)}
+                  style={{ flex: 1, padding: '9px 0', fontSize: 14, fontWeight: 600, border: 'none', background: 'transparent', cursor: 'pointer', color: mode === m ? '#db2777' : '#71717a', borderBottom: `2px solid ${mode === m ? '#db2777' : 'transparent'}`, marginBottom: -1 }}>
+                  {m === 'signin' ? 'Sign in' : 'Create account'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Back link for forgot mode */}
+          {mode === 'forgot' && (
+            <button onClick={() => switchMode('signin')}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#71717a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 20, fontWeight: 500 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+              Back to sign in
+            </button>
+          )}
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {mode === 'signup' && (
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#52525b', marginBottom: 5 }}>Full name</label>
+                <label style={labelStyle}>Full name</label>
                 <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Durgesh Singh" required style={inputStyle} onFocus={e => (e.target.style.borderColor = '#f9a8d4')} onBlur={e => (e.target.style.borderColor = '#e4e4e7')} />
               </div>
             )}
+
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#52525b', marginBottom: 5 }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required autoFocus style={inputStyle} onFocus={e => (e.target.style.borderColor = '#f9a8d4')} onBlur={e => (e.target.style.borderColor = '#e4e4e7')} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#52525b', marginBottom: 5 }}>Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={mode === 'signup' ? 'Min. 8 characters' : '••••••••'} required minLength={mode === 'signup' ? 8 : 1} style={inputStyle} onFocus={e => (e.target.style.borderColor = '#f9a8d4')} onBlur={e => (e.target.style.borderColor = '#e4e4e7')} />
+              <label style={labelStyle}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required autoFocus={mode !== 'signup'} style={inputStyle} onFocus={e => (e.target.style.borderColor = '#f9a8d4')} onBlur={e => (e.target.style.borderColor = '#e4e4e7')} />
             </div>
 
-            {error && <div style={{ fontSize: 13, color: '#ef4444', background: '#fef2f2', borderRadius: 8, padding: '10px 14px' }}>{error}</div>}
+            {mode !== 'forgot' && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <label style={labelStyle}>Password</label>
+                  {mode === 'signin' && (
+                    <button type="button" onClick={() => switchMode('forgot')}
+                      style={{ fontSize: 12, color: '#db2777', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}>
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={mode === 'signup' ? 'Min. 8 characters' : '••••••••'} required minLength={mode === 'signup' ? 8 : 1} style={inputStyle} onFocus={e => (e.target.style.borderColor = '#f9a8d4')} onBlur={e => (e.target.style.borderColor = '#e4e4e7')} />
+              </div>
+            )}
+
+            {error   && <div style={{ fontSize: 13, color: '#ef4444', background: '#fef2f2', borderRadius: 8, padding: '10px 14px' }}>{error}</div>}
             {message && <div style={{ fontSize: 13, color: '#16a34a', background: '#f0fdf4', borderRadius: 8, padding: '10px 14px' }}>{message}</div>}
 
-            <button type="submit" disabled={loading} className="btn" style={{ marginTop: 6, width: '100%', padding: '12px 0', fontSize: 15, justifyContent: 'center' }}>
-              {loading
-                ? <><span className="spinner" />{mode === 'signup' ? 'Creating…' : 'Signing in…'}</>
-                : mode === 'signup' ? 'Create account →' : 'Sign in →'}
-            </button>
+            {/* Don't show submit if reset email already sent */}
+            {!(mode === 'forgot' && message) && (
+              <button type="submit" disabled={loading} className="btn" style={{ marginTop: 6, width: '100%', padding: '12px 0', fontSize: 15, justifyContent: 'center' }}>
+                {loading ? (
+                  <><span className="spinner" />{mode === 'signup' ? 'Creating…' : mode === 'forgot' ? 'Sending…' : 'Signing in…'}</>
+                ) : mode === 'signup' ? 'Create account →'
+                  : mode === 'forgot' ? 'Send reset link →'
+                  : 'Sign in →'}
+              </button>
+            )}
           </form>
 
           {mode === 'signin' && (
             <div style={{ textAlign: 'center', marginTop: 18, fontSize: 13, color: '#71717a' }}>
               Don&apos;t have an account?{' '}
-              <span onClick={() => setMode('signup')} style={{ color: '#db2777', cursor: 'pointer', fontWeight: 700 }}>Sign up free</span>
+              <span onClick={() => switchMode('signup')} style={{ color: '#db2777', cursor: 'pointer', fontWeight: 700 }}>Sign up free</span>
             </div>
           )}
           {mode === 'signup' && (
             <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#71717a', lineHeight: 1.5 }}>
               By creating an account you agree to our Terms of Service and Privacy Policy.
+            </div>
+          )}
+          {mode === 'forgot' && message && (
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <button onClick={() => switchMode('signin')} className="btn ghost" style={{ fontSize: 13 }}>
+                Back to sign in
+              </button>
             </div>
           )}
         </div>
@@ -132,7 +181,5 @@ export default function LoginPage() {
   )
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', border: '1.5px solid #e4e4e7', borderRadius: 10,
-  padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', transition: 'border-color .15s',
-}
+const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 700, color: '#52525b', marginBottom: 5 }
+const inputStyle: React.CSSProperties = { width: '100%', border: '1.5px solid #e4e4e7', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', transition: 'border-color .15s' }
