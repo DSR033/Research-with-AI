@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { visibleQuestions, nextQuestion } from '../../../../lib/logic-engine'
+import { visibleQuestions, nextQuestion, LOGIC_TERMINATED } from '../../../../lib/logic-engine'
 import type { LogicRule } from '../../../../lib/logic-engine'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -55,10 +55,44 @@ interface Question {
   question_options?: Array<{ id: string; label: string; position: number }>
 }
 
+interface QuotaRule { id: string; name: string; question_id: string; answer_value: string; limit: number; action: string }
 interface SurveySettings {
   require_response?: boolean
   no_duplicates?: boolean
   randomize?: boolean
+  access_mode?: 'public' | 'password' | 'email_password' | 'invite_only'
+  password?: string
+  invite_emails?: string
+  screen_out_msg?: string
+  quota_full_msg?: string
+  over_quota_msg?: string
+  quotas?: QuotaRule[]
+  // End screens — authored in the builder under Build → End Screens
+  thank_you_heading?: string
+  thank_you_text?: string
+  disqualified_heading?: string
+  redirect_url?: string | null
+  redirect_delay?: number
+  // Survey behaviour
+  capture_location?: boolean
+  age_verification?: boolean
+  closed_message?: string
+}
+
+const THANK_YOU_HEADING = 'Thank you!'
+const THANK_YOU_TEXT    = 'Your answers have been recorded.'
+const DISQUALIFIED_HEADING = 'You do not qualify'
+const DISQUALIFIED_TEXT = "We're sorry, but you don't qualify for this survey."
+
+/** Send the respondent on to the configured URL once the survey completes. */
+function useCompletionRedirect(settings: SurveySettings | undefined, active: boolean) {
+  useEffect(() => {
+    const url = settings?.redirect_url
+    if (!active || !url) return
+    const delayMs = Math.max(0, (settings?.redirect_delay ?? 0)) * 1000
+    const t = setTimeout(() => { window.location.href = url }, delayMs)
+    return () => clearTimeout(t)
+  }, [active, settings?.redirect_url, settings?.redirect_delay])
 }
 
 interface Survey {
@@ -107,12 +141,25 @@ function hasResponded(surveyId: string): boolean {
 }
 
 // ─── Gate screen ──────────────────────────────────────────────────────────────
-function SurveyGate({ icon, title, desc }: { icon: string; title: string; desc: string }) {
+type TerminationType = 'complete' | 'screen_out' | 'quota_full' | 'over_quota' | 'info'
+function SurveyGate({ icon, title, desc, type = 'info', footer }: { icon: string; title: string; desc: string; type?: TerminationType; footer?: string }) {
+  const palette: Record<TerminationType, { accent: string; bg: string; badge?: string }> = {
+    complete:   { accent: '#16a34a', bg: '#f0fdf4', badge: 'Completed' },
+    screen_out: { accent: '#dc2626', bg: '#fef2f2', badge: 'Not qualified' },
+    quota_full: { accent: '#d97706', bg: '#fffbeb', badge: 'Quota filled' },
+    over_quota: { accent: '#7c3aed', bg: '#faf5ff', badge: 'Over quota' },
+    info:       { accent: '#71717a', bg: 'var(--bg)' },
+  }
+  const p = palette[type]
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', gap: 12, padding: 24, textAlign: 'center' }}>
-      <div style={{ fontSize: 40 }}>{icon}</div>
-      <div style={{ fontWeight: 600, fontSize: 16 }}>{title}</div>
-      <div style={{ color: 'var(--grey)', fontSize: 13, maxWidth: 320 }}>{desc}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: p.bg, gap: 12, padding: 24, textAlign: 'center' }}>
+      <div style={{ fontSize: 48 }}>{icon}</div>
+      {p.badge && (
+        <span style={{ fontSize: 11, fontWeight: 700, color: p.accent, background: `${p.accent}18`, padding: '3px 10px', borderRadius: 20, border: `1px solid ${p.accent}33`, textTransform: 'uppercase', letterSpacing: '.05em' }}>{p.badge}</span>
+      )}
+      <div style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 800, fontSize: 20, color: '#18181b', maxWidth: 340, lineHeight: 1.3 }}>{title}</div>
+      <div style={{ color: '#71717a', fontSize: 14, maxWidth: 320, lineHeight: 1.5 }}>{desc}</div>
+      {footer && <div style={{ color: '#a1a1aa', fontSize: 12, marginTop: 6 }}>{footer}</div>}
     </div>
   )
 }
@@ -131,6 +178,67 @@ function isText(type: string) {
   return ['short_text', 'long_text', 'date_time', 'contact', 'demographic'].includes(type)
 }
 
+// ─── Access Gate ──────────────────────────────────────────────────────────────
+function AccessGateForm({ settings, onUnlock }: { settings: SurveySettings; onUnlock: () => void }) {
+  const mode = settings.access_mode ?? 'public'
+  const [email, setEmail] = useState('')
+  const [pwd, setPwd] = useState('')
+  const [showPwd, setShowPwd] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = () => {
+    setErr('')
+    if (mode === 'password' || mode === 'email_password') {
+      if (!pwd || pwd !== settings.password) { setErr('Incorrect password. Please try again.'); return }
+      onUnlock()
+    } else if (mode === 'invite_only') {
+      const list = (settings.invite_emails ?? '').split(/[\s,]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+      if (!list.includes(email.trim().toLowerCase())) { setErr('Your email is not on the invite list.'); return }
+      onUnlock()
+    }
+  }
+
+  const icon = mode === 'invite_only' ? '📩' : '🔒'
+  const title = mode === 'invite_only' ? 'Invite-only survey' : 'Password protected'
+  const desc = mode === 'invite_only'
+    ? 'Enter the email address you were invited with to continue.'
+    : mode === 'email_password'
+    ? 'Enter your email and the survey password to continue.'
+    : 'Enter the password to access this survey.'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', padding: 24 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: '36px 40px', maxWidth: 400, width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,.12)', textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>{icon}</div>
+        <div style={{ fontFamily: "var(--font-display,'Schibsted Grotesk',sans-serif)", fontWeight: 800, fontSize: 20, marginBottom: 6 }}>{title}</div>
+        <div style={{ color: 'var(--grey)', fontSize: 13, marginBottom: 24, lineHeight: 1.5 }}>{desc}</div>
+
+        {(mode === 'email_password' || mode === 'invite_only') && (
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com"
+            style={{ width: '100%', fontSize: 14, padding: '10px 14px', borderRadius: 10, border: '1.5px solid var(--border)', marginBottom: 10, outline: 'none', boxSizing: 'border-box' as const }} />
+        )}
+
+        {(mode === 'password' || mode === 'email_password') && (
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <input type={showPwd ? 'text' : 'password'} value={pwd} onChange={e => setPwd(e.target.value)} placeholder="Enter password"
+              onKeyDown={e => e.key === 'Enter' && submit()}
+              style={{ width: '100%', fontSize: 14, padding: '10px 42px 10px 14px', borderRadius: 10, border: '1.5px solid var(--border)', outline: 'none', boxSizing: 'border-box' as const }} />
+            <button onClick={() => setShowPwd(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--grey)', fontSize: 12 }}>
+              {showPwd ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        )}
+
+        {err && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 10 }}>{err}</div>}
+
+        <button onClick={submit} style={{ width: '100%', fontSize: 14, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#db2777,#be185d)', border: 'none', padding: '12px 0', borderRadius: 10, cursor: 'pointer' }}>
+          {mode === 'invite_only' ? 'Verify access' : 'Unlock survey'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function RespondPage() {
   const params = useParams()
   const id = params.id as string
@@ -141,6 +249,7 @@ export default function RespondPage() {
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<'classic' | 'conversational'>('conversational')
   const [branding, setBranding] = useState({ brand_color: '#2E5BFF', logo_url: null as string | null, org_name: 'SurveyAI' })
+  const [unlocked, setUnlocked] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -180,14 +289,25 @@ export default function RespondPage() {
     return <SurveyGate icon="🔒" title="This survey isn't available yet" desc="It may not be published, or the link may be incorrect." />
   }
 
+  // Survey manually paused or closed by its owner
+  if (survey.status === 'paused' || survey.status === 'closed') {
+    return <SurveyGate icon="🔒" title="This survey is closed" desc={survey.settings?.closed_message || 'This survey is currently closed. Thank you for your interest.'} />
+  }
+
   // Close date enforcement
   if (survey.close_date && new Date(survey.close_date) < new Date()) {
-    return <SurveyGate icon="📅" title="This survey has closed" desc="The submission window for this survey has ended." />
+    return <SurveyGate icon="📅" title="This survey has closed" desc={survey.settings?.closed_message || 'The submission window for this survey has ended.'} />
   }
 
   // Duplicate submission gate (client-side fast path)
   if (survey.settings?.no_duplicates && hasResponded(id)) {
     return <SurveyGate icon="✅" title="Already submitted" desc="You've already completed this survey. Thank you for your response!" />
+  }
+
+  // Access control gate
+  const accessMode = survey.settings?.access_mode ?? 'public'
+  if (accessMode !== 'public' && !unlocked) {
+    return <AccessGateForm settings={survey.settings!} onUnlock={() => setUnlocked(true)} />
   }
 
   if (questions.length === 0) {
@@ -212,7 +332,8 @@ function ConversationalMode({ survey, questions, rules, branding }: { survey: Su
   const [messages, setMessages] = useState<Message[]>([])
   const [qIndex, setQIndex] = useState(-1) // -1 = not started yet
   const [inputDisabled, setInputDisabled] = useState(false)
-  const [done, setDone] = useState(false)
+  const [done, setDone] = useState<false | 'complete' | 'screen_out' | 'quota_full' | 'over_quota'>(false)
+  useCompletionRedirect(survey.settings, done === 'complete')
   const [answers, setAnswers] = useState<Answer[]>([])
   const [answerMap, setAnswerMap] = useState<Record<string, string>>({})
   const [starHover, setStarHover] = useState(0)
@@ -275,14 +396,35 @@ function ConversationalMode({ survey, questions, rules, branding }: { survey: Su
     const newMap = { ...answerMap, [q.id]: value }
     setAnswerMap(newMap)
 
+    // Check quotas
+    const quotas = survey.settings?.quotas ?? []
+    for (const quota of quotas) {
+      if (quota.answer_value && value === quota.answer_value) {
+        // Optimistically terminate — real enforcement is server-side
+        const action = quota.action as 'screen_out' | 'quota_full' | 'over_quota'
+        showTypingThen(() => {
+          const msg = action === 'screen_out' ? (survey.settings?.screen_out_msg ?? "You don't qualify for this survey.")
+            : action === 'quota_full' ? (survey.settings?.quota_full_msg ?? "We've filled all available spots.")
+            : (survey.settings?.over_quota_msg ?? "We've reached our quota for your profile.")
+          addMsg(msg, 'bot')
+          setTimeout(() => setDone(action), 800)
+        }, 600)
+        return
+      }
+    }
+
     // Use logic engine to find next question
     const nextId = nextQuestion(questions, rules, newMap, q.id)
+    if (nextId === LOGIC_TERMINATED) {
+      finishSurvey(newAnswers, 'screen_out')
+      return
+    }
     if (nextId === null) {
-      finishSurvey(newAnswers)
+      finishSurvey(newAnswers, 'complete')
       return
     }
     const nextQ = questions.find(qi => qi.id === nextId)
-    if (!nextQ) { finishSurvey(newAnswers); return }
+    if (!nextQ) { finishSurvey(newAnswers, 'complete'); return }
     const nextIdx = questions.indexOf(nextQ)
 
     showTypingThen(() => {
@@ -291,28 +433,27 @@ function ConversationalMode({ survey, questions, rules, branding }: { survey: Su
     })
   }
 
-
-
-  const finishSurvey = async (finalAnswers: Answer[]) => {
+  const finishSurvey = async (finalAnswers: Answer[], termType: 'complete' | 'screen_out' = 'complete') => {
     setInputDisabled(true)
     const respondentId = getRespondentId(survey.id)
+    const status = termType === 'complete' ? 'complete' : 'disqualified'
     try {
       const res = await fetch(`${API}/surveys/${survey.id}/responses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'complete', answers: finalAnswers, respondent_id: respondentId }),
+        body: JSON.stringify({ status, answers: finalAnswers, respondent_id: respondentId }),
       })
       if (!res.ok) {
         const err = await res.json()
         showTypingThen(() => {
           setMessages(prev => [...prev, { id: 'err', role: 'bot', text: `⚠️ ${err.detail ?? 'Submission failed.'}` }])
-          setDone(true)
+          setDone('complete')
         }, 400)
         return
       }
-      markResponded(survey.id)
+      if (termType === 'complete') markResponded(survey.id)
     } catch (_) {}
-    showTypingThen(() => { setDone(true) }, 700)
+    showTypingThen(() => { setDone(termType) }, 700)
   }
 
   const progress = qIndex < 0 ? 0 : Math.round((qIndex / questions.length) * 100)
@@ -371,11 +512,36 @@ function ConversationalMode({ survey, questions, rules, branding }: { survey: Su
 
         {/* Input area */}
         <div style={{ borderTop: '1px solid var(--border)', padding: '14px 16px' }}>
-          {done ? (
+          {done === 'complete' ? (
             <div style={{ textAlign: 'center', padding: '30px 10px' }}>
               <div style={{ fontSize: 34, marginBottom: 6 }}>✅</div>
-              <div style={{ fontWeight: 600 }}>Thanks for your time!</div>
-              <div style={{ color: 'var(--grey)', fontSize: 13, marginTop: 4 }}>Your responses have been recorded.</div>
+              <div style={{ fontWeight: 700 }}>{survey.settings?.thank_you_heading || THANK_YOU_HEADING}</div>
+              <div style={{ color: 'var(--grey)', fontSize: 13, marginTop: 4 }}>{survey.settings?.thank_you_text || THANK_YOU_TEXT}</div>
+              {survey.settings?.redirect_url && (
+                <div style={{ color: 'var(--grey)', fontSize: 11.5, marginTop: 12 }}>
+                  {(survey.settings.redirect_delay ?? 0) === 0
+                    ? 'Redirecting…'
+                    : `Redirecting in ${survey.settings.redirect_delay} seconds…`}
+                </div>
+              )}
+            </div>
+          ) : done === 'screen_out' ? (
+            <div style={{ textAlign: 'center', padding: '24px 10px' }}>
+              <div style={{ fontSize: 32, marginBottom: 6 }}>🚫</div>
+              <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>{survey.settings?.disqualified_heading || DISQUALIFIED_HEADING}</div>
+              <div style={{ color: 'var(--grey)', fontSize: 13 }}>{survey.settings?.screen_out_msg ?? DISQUALIFIED_TEXT}</div>
+            </div>
+          ) : done === 'quota_full' ? (
+            <div style={{ textAlign: 'center', padding: '24px 10px' }}>
+              <div style={{ fontSize: 32, marginBottom: 6 }}>📊</div>
+              <div style={{ fontWeight: 700, color: '#d97706', marginBottom: 4 }}>Quota filled</div>
+              <div style={{ color: 'var(--grey)', fontSize: 13 }}>{survey.settings?.quota_full_msg ?? "We've filled all available spots."}</div>
+            </div>
+          ) : done === 'over_quota' ? (
+            <div style={{ textAlign: 'center', padding: '24px 10px' }}>
+              <div style={{ fontSize: 32, marginBottom: 6 }}>⚖️</div>
+              <div style={{ fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Over quota</div>
+              <div style={{ color: 'var(--grey)', fontSize: 13 }}>{survey.settings?.over_quota_msg ?? "We've reached our quota for your profile."}</div>
             </div>
           ) : currentQ && !inputDisabled ? (
             renderConversationalInput(currentQ, submitAnswer, starHover, setStarHover, textVal, setTextVal, inputDisabled)
@@ -664,8 +830,9 @@ function TypingBubble() {
 // ─── CLASSIC MODE ─────────────────────────────────────────────────────────────
 function ClassicMode({ survey, questions, rules, branding }: { survey: Survey; questions: Question[]; rules: LogicRule[]; branding: Branding }) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
-  const [submitted, setSubmitted] = useState(false)
+  const [submitted, setSubmitted] = useState<false | 'complete' | 'screen_out' | 'quota_full' | 'over_quota'>(false)
   const [submitting, setSubmitting] = useState(false)
+  useCompletionRedirect(survey.settings, submitted === 'complete')
 
   // Flat string map for logic engine (single-value only; multi-select joins with ", ")
   const flatAnswers: Record<string, string> = {}
@@ -690,6 +857,18 @@ function ClassicMode({ survey, questions, rules, branding }: { survey: Survey; q
       return
     }
     setSubmitError(null)
+
+    // Check quotas before submitting
+    const quotas = survey.settings?.quotas ?? []
+    for (const quota of quotas) {
+      const ans = flatAnswers[quota.question_id] ?? ''
+      if (quota.answer_value && ans === quota.answer_value) {
+        const action = quota.action as 'screen_out' | 'quota_full' | 'over_quota'
+        setSubmitted(action)
+        return
+      }
+    }
+
     setSubmitting(true)
     const respondentId = getRespondentId(survey.id)
     const payload = questions.map(q => ({
@@ -718,18 +897,33 @@ function ClassicMode({ survey, questions, rules, branding }: { survey: Survey; q
       setSubmitting(false)
       return
     }
-    setSubmitted(true)
+    setSubmitted('complete')
     setSubmitting(false)
   }
 
-  if (submitted) {
+  if (submitted === 'complete') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--bg)', gap: 12 }}>
-        <div style={{ fontSize: 48 }}>✅</div>
-        <h2 style={{ fontSize: 22, margin: 0 }}>Thanks for your response!</h2>
-        <p style={{ color: 'var(--grey)', margin: 0 }}>Your answers have been recorded.</p>
-      </div>
+      <SurveyGate
+        type="complete"
+        icon="✅"
+        title={survey.settings?.thank_you_heading || THANK_YOU_HEADING}
+        desc={survey.settings?.thank_you_text || THANK_YOU_TEXT}
+        footer={survey.settings?.redirect_url
+          ? ((survey.settings.redirect_delay ?? 0) === 0
+              ? 'Redirecting…'
+              : `Redirecting in ${survey.settings.redirect_delay} seconds…`)
+          : undefined}
+      />
     )
+  }
+  if (submitted === 'screen_out') {
+    return <SurveyGate type="screen_out" icon="🚫" title={survey.settings?.disqualified_heading || DISQUALIFIED_HEADING} desc={survey.settings?.screen_out_msg ?? DISQUALIFIED_TEXT} />
+  }
+  if (submitted === 'quota_full') {
+    return <SurveyGate type="quota_full" icon="📊" title="Quota filled" desc={survey.settings?.quota_full_msg ?? "We've filled all available spots. Thank you for your interest."} />
+  }
+  if (submitted === 'over_quota') {
+    return <SurveyGate type="over_quota" icon="⚖️" title="Over quota" desc={survey.settings?.over_quota_msg ?? "We've reached our quota for your profile segment."} />
   }
 
   return (

@@ -11,6 +11,22 @@ interface Survey {
   status: string
   created_at: string
   mode?: string
+  response_count?: number
+  completed_count?: number
+  last_response_at?: string | null
+  question_count?: number
+}
+
+function timeAgo(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
 
 const STRIP_COLORS = ['#db2777', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ef4444', '#14b8a6']
@@ -33,7 +49,7 @@ function statusBadge(status: string) {
 export default function Dashboard() {
   const [surveys, setSurveys]   = useState<Survey[]>([])
   const [showModal, setShowModal] = useState(false)
-  const [filter, setFilter]     = useState<'all' | 'active' | 'draft'>('all')
+  const [filter, setFilter]     = useState<'all' | 'active' | 'draft' | 'closed'>('all')
   const [loading, setLoading]   = useState(true)
   const router = useRouter()
 
@@ -45,16 +61,24 @@ export default function Dashboard() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     const s = await createSurvey({ title, mode, status: 'draft', created_by: user?.id ?? null })
+    if (!s?.id) throw new Error('Backend did not return a survey ID. Is the backend running on port 8000?')
     router.push(`/surveys/${s.id}`)
   }
 
   const filtered = surveys.filter(s => {
     if (filter === 'all') return true
     if (filter === 'active') return s.status === 'active' || s.status === 'published'
-    return s.status === 'draft'
+    if (filter === 'draft') return s.status === 'draft'
+    if (filter === 'closed') return s.status === 'closed'
+    return true
   })
 
   const totalPublished = surveys.filter(s => s.status === 'active' || s.status === 'published').length
+  const totalDraft = surveys.filter(s => s.status === 'draft').length
+  const totalClosed = surveys.filter(s => s.status === 'closed').length
+  const totalResponses = surveys.reduce((sum, s) => sum + (s.response_count ?? 0), 0)
+  const totalCompleted = surveys.reduce((sum, s) => sum + (s.completed_count ?? 0), 0)
+  const avgCompletionRate = totalResponses > 0 ? Math.round((totalCompleted / totalResponses) * 100) : null
 
   const tabStyle = (on: boolean) => ({
     fontSize: 13, fontWeight: on ? 600 : 500, padding: '7px 16px', borderRadius: 8, border: 'none',
@@ -71,17 +95,29 @@ export default function Dashboard() {
       <div className="page-container" style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 28px 80px' }}>
 
         {/* Stats row */}
-        <div className="stat-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 32 }}>
+        <div className="stat-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 16 }}>
           {[
-            { label: 'Total surveys',    value: surveys.length,      delta: `${totalPublished} published` },
-            { label: 'Published',        value: totalPublished,      delta: 'currently live' },
-            { label: 'Drafts',           value: surveys.length - totalPublished, delta: 'in progress' },
-            { label: 'Avg. completion',  value: '—',                 delta: 'across all surveys' },
+            { label: 'Total Surveys',    value: String(surveys.length), delta: 'all time',            accent: '#8b5cf6', bg: 'linear-gradient(135deg,rgba(139,92,246,.08),rgba(147,51,234,.05))' },
+            { label: 'Published',        value: String(totalPublished), delta: 'currently live',       accent: '#16a34a', bg: 'linear-gradient(135deg,rgba(22,163,74,.08),rgba(21,128,61,.04))' },
+            { label: 'Drafts',           value: String(totalDraft),     delta: 'in progress',          accent: '#d97706', bg: 'linear-gradient(135deg,rgba(217,119,6,.08),rgba(180,83,9,.04))' },
           ].map(st => (
-            <div key={st.label} style={{ background: '#fff', border: '1px solid #ececf0', borderRadius: 16, padding: '18px 20px' }}>
-              <div style={{ fontSize: 12, color: '#a1a1aa', fontWeight: 600, marginBottom: 8 }}>{st.label}</div>
-              <div style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 700, fontSize: 28, letterSpacing: '-.02em', color: '#18181b' }}>{st.value}</div>
-              <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 600, marginTop: 4 }}>{st.delta}</div>
+            <div key={st.label} style={{ background: st.bg, border: `1px solid ${st.accent}22`, borderRadius: 16, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, color: st.accent, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.05em', marginBottom: 10 }}>{st.label}</div>
+              <div style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 800, fontSize: 30, letterSpacing: '-.02em', color: '#18181b' }}>{st.value}</div>
+              <div style={{ fontSize: 12, color: st.accent, fontWeight: 600, marginTop: 4, opacity: 0.8 }}>{st.delta}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 32 }}>
+          {[
+            { label: 'Closed',              value: String(totalClosed),                                          delta: 'finished collecting',    accent: '#71717a', bg: 'linear-gradient(135deg,rgba(113,113,122,.08),rgba(82,82,91,.04))' },
+            { label: 'Total Responses',     value: String(totalResponses),                                       delta: 'across all surveys',     accent: '#db2777', bg: 'linear-gradient(135deg,rgba(219,39,119,.08),rgba(190,24,93,.04))' },
+            { label: 'Avg. Completion',     value: avgCompletionRate !== null ? `${avgCompletionRate}%` : '—',   delta: 'of started responses',   accent: '#0ea5e9', bg: 'linear-gradient(135deg,rgba(14,165,233,.08),rgba(2,132,199,.04))' },
+          ].map(st => (
+            <div key={st.label} style={{ background: st.bg, border: `1px solid ${st.accent}22`, borderRadius: 16, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, color: st.accent, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.05em', marginBottom: 10 }}>{st.label}</div>
+              <div style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 800, fontSize: 30, letterSpacing: '-.02em', color: '#18181b' }}>{st.value}</div>
+              <div style={{ fontSize: 12, color: st.accent, fontWeight: 600, marginTop: 4, opacity: 0.8 }}>{st.delta}</div>
             </div>
           ))}
         </div>
@@ -89,9 +125,10 @@ export default function Dashboard() {
         {/* Filter + Create */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div style={{ display: 'flex', gap: 2, background: '#f4f4f5', padding: 4, borderRadius: 11 }}>
-            <button onClick={() => setFilter('all')}    style={tabStyle(filter === 'all')}>All surveys</button>
-            <button onClick={() => setFilter('active')} style={tabStyle(filter === 'active')}>Published</button>
-            <button onClick={() => setFilter('draft')}  style={tabStyle(filter === 'draft')}>Draft</button>
+            <button onClick={() => setFilter('all')}    style={tabStyle(filter === 'all')}>All ({surveys.length})</button>
+            <button onClick={() => setFilter('active')} style={tabStyle(filter === 'active')}>Published ({totalPublished})</button>
+            <button onClick={() => setFilter('draft')}  style={tabStyle(filter === 'draft')}>Draft ({totalDraft})</button>
+            <button onClick={() => setFilter('closed')} style={tabStyle(filter === 'closed')}>Closed ({totalClosed})</button>
           </div>
           <button className="btn" onClick={() => setShowModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -134,8 +171,31 @@ export default function Dashboard() {
                     <div style={{ fontSize: 12, color: 'rgba(255,255,255,.7)', marginTop: 4 }}>{s.mode ?? 'classic'} survey</div>
                   </div>
 
+                  {/* Response/question meta */}
+                  <div style={{ display: 'flex', gap: 0, padding: '10px 16px 0', borderTop: '1px solid #f4f4f5' }}>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      <span style={{ fontWeight: 700, color: (s.response_count ?? 0) > 0 ? '#db2777' : '#a1a1aa' }}>{s.response_count ?? 0}</span>
+                      <span style={{ color: '#a1a1aa' }}>response{(s.response_count ?? 0) !== 1 ? 's' : ''}</span>
+                      {(s.response_count ?? 0) > 0 && (s.completed_count ?? 0) >= 0 && (
+                        <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600, background: '#f0fdf4', padding: '1px 6px', borderRadius: 20 }}>
+                          {s.response_count ? Math.round(((s.completed_count ?? 0) / s.response_count) * 100) : 0}% done
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="2" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      <span style={{ color: '#a1a1aa' }}>{s.question_count ?? 0} q</span>
+                    </div>
+                  </div>
+                  {s.last_response_at && (
+                    <div style={{ padding: '4px 16px 0', fontSize: 11, color: '#a1a1aa' }}>
+                      Last response {timeAgo(s.last_response_at)}
+                    </div>
+                  )}
+
                   {/* Actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 16px', marginTop: 'auto' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px 14px', marginTop: 'auto' }}>
                     <button
                       onClick={e => { e.stopPropagation(); router.push(`/surveys/${s.id}`) }}
                       style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#be185d', background: '#fdf2f8', border: 'none', padding: 9, borderRadius: 9, cursor: 'pointer' }}
@@ -146,7 +206,7 @@ export default function Dashboard() {
                       Edit
                     </button>
                     <button
-                      onClick={e => { e.stopPropagation(); router.push(`/surveys/${s.id}?tab=results`) }}
+                      onClick={e => { e.stopPropagation(); router.push(`/surveys/${s.id}?tab=insights`) }}
                       style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#18181b', background: '#f4f4f5', border: 'none', padding: 9, borderRadius: 9, cursor: 'pointer' }}
                       onMouseEnter={e => (e.currentTarget.style.background = '#ececf0')}
                       onMouseLeave={e => (e.currentTarget.style.background = '#f4f4f5')}
@@ -187,13 +247,24 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (ti
   const [title, setTitle]               = useState('')
   const [selectedMethod, setSelectedMethod] = useState('classic')
   const [creating, setCreating]         = useState(false)
+  const [createError, setCreateError]   = useState('')
   const inFlight = useRef(false)
 
   const handleCreate = async () => {
     if (!title.trim() || inFlight.current) return
     inFlight.current = true
     setCreating(true)
-    await onCreate(title.trim(), selectedMethod)
+    setCreateError('')
+    try {
+      await onCreate(title.trim(), selectedMethod)
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : ''
+      const msg = raw.includes('timed out') || raw.includes('fetch') || raw.includes('network')
+        ? 'Could not reach the backend. Run: cd backend && uvicorn main:app --reload'
+        : raw || 'Something went wrong. Please try again.'
+      setCreateError(msg)
+      setCreating(false)
+    }
     inFlight.current = false
   }
 
@@ -242,6 +313,11 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (ti
             ))}
           </div>
 
+          {createError && (
+            <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#b91c1c' }}>
+              {createError}
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button className="btn ghost" onClick={onClose} disabled={creating}>Cancel</button>
             <button className="btn" onClick={handleCreate} disabled={!title.trim() || creating}>

@@ -64,13 +64,9 @@ export default function ExpertPage() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user: u } }) => {
-      if (!u) { router.push('/login'); return }
-      setUser({ id: u.id, email: u.email ?? '' })
-      fetch(`${API}/expert/jobs?user_id=${u.id}`)
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d?.jobs) setJobs(d.jobs) })
-        .catch(() => {})
-        .finally(() => setLoading(false))
+      if (!u && process.env.NODE_ENV !== 'development') { router.push('/login'); return }
+      setUser(u ? { id: u.id, email: u.email ?? '' } : { id: 'dev', email: 'dev@local' })
+      setLoading(false)
     })
   }, [])
 
@@ -315,8 +311,13 @@ export default function ExpertPage() {
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#52525b', marginBottom: 5 }}>Bio</label>
                 <textarea defaultValue="Experienced survey researcher with 5+ years designing mixed-method studies for Fortune 500 companies." style={{ width: '100%', border: '1.5px solid #e4e4e7', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', minHeight: 100, boxSizing: 'border-box' }} />
               </div>
-              <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
-                <button style={{ padding: '10px 24px', borderRadius: 20, background: 'linear-gradient(135deg,#db2777,#be185d)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Save Profile</button>
+              <div style={{ marginTop: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {user?.id && (
+                  <button onClick={() => router.push(`/expert/${user.id}`)} style={{ padding: '10px 18px', borderRadius: 10, background: '#fff', color: '#db2777', border: '1.5px solid #db2777', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    View public profile →
+                  </button>
+                )}
+                <button style={{ padding: '10px 24px', borderRadius: 10, background: 'linear-gradient(135deg,#db2777,#be185d)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Save Profile</button>
               </div>
             </div>
           )}

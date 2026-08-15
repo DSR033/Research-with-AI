@@ -1,24 +1,19 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { SYSTEM_ROLES, roleColorFor } from '../../../lib/permissions'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-const ROLES = ['owner', 'admin', 'member', 'viewer'] as const
-type Role = typeof ROLES[number]
+type Role = string
 
-const ROLE_DESC: Record<Role, string> = {
-  owner: 'Full access — billing, team, settings, all surveys',
-  admin: 'Team management + org settings, no billing',
-  member: 'Create and manage own surveys',
-  viewer: 'Read-only access to surveys and results',
-}
+/** Roles available for assignment. Loaded from /admin/roles, seeded from the
+ *  system presets so the page works before the backend is reachable. */
+interface AssignableRole { slug: string; name: string; description: string; color: string }
 
-const ROLE_COLOR: Record<Role, { bg: string; text: string }> = {
-  owner: { bg: 'var(--amber-bg)', text: 'var(--amber)' },
-  admin: { bg: '#EEF2FF', text: 'var(--accent)' },
-  member: { bg: 'var(--green-bg)', text: 'var(--green)' },
-  viewer: { bg: 'var(--bg)', text: 'var(--grey)' },
-}
+const FALLBACK_ASSIGNABLE: AssignableRole[] = SYSTEM_ROLES.map(r => ({
+  slug: r.slug, name: r.name, description: r.description, color: r.color,
+}))
 
 interface Member { id: string; name: string; email: string; role: Role; joined: string; avatar: string }
 
@@ -27,15 +22,33 @@ const INITIAL_MEMBERS: Member[] = [
 ]
 
 export default function TeamPage() {
+  const router = useRouter()
   const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('member')
   const [inviting, setInviting] = useState(false)
   const [showInvite, setShowInvite] = useState(false)
   const [editingRole, setEditingRole] = useState<string | null>(null)
+  const [assignable, setAssignable] = useState<AssignableRole[]>(FALLBACK_ASSIGNABLE)
 
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch(`${API}/admin/roles`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data?.roles?.length) return
+        setAssignable(data.roles.map((r: { slug: string; name: string; description: string }, i: number) => ({
+          slug: r.slug, name: r.name, description: r.description, color: roleColorFor(r.slug, i),
+        })))
+      })
+      .catch(() => { /* keep the preset fallback */ })
+  }, [])
+
+  const roleMeta = (slug: string): AssignableRole =>
+    assignable.find(r => r.slug === slug)
+      ?? { slug, name: slug, description: '', color: 'var(--grey)' }
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return
@@ -87,8 +100,8 @@ export default function TeamPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: inviteSuccess ? 16 : 28 }}>
         <div>
-          <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>Team & Roles</h1>
-          <div style={{ color: 'var(--grey)', fontSize: 13 }}>Manage who has access to your workspace and what they can do.</div>
+          <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>Team</h1>
+          <div style={{ color: 'var(--grey)', fontSize: 13 }}>Manage who has access to your workspace and which role they hold.</div>
         </div>
         <button className="btn" onClick={() => { setShowInvite(true); setInviteError(null) }}>+ Invite Member</button>
       </div>
@@ -102,12 +115,20 @@ export default function TeamPage() {
 
       {/* Role guide */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, marginBottom: 24 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Role permissions</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
-          {ROLES.map(r => (
-            <div key={r} style={{ padding: 12, background: 'var(--bg)', borderRadius: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: ROLE_COLOR[r].bg, color: ROLE_COLOR[r].text }}>{r}</span>
-              <div style={{ fontSize: 11.5, color: 'var(--grey)', marginTop: 8, lineHeight: 1.4 }}>{ROLE_DESC[r]}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Roles in this workspace</div>
+          <button
+            onClick={() => router.push('/admin/roles')}
+            style={{ fontSize: 12, fontWeight: 600, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer' }}
+          >
+            Manage roles &amp; permissions →
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+          {assignable.map(r => (
+            <div key={r.slug} style={{ padding: 12, background: 'var(--bg)', borderRadius: 8, borderLeft: `3px solid ${r.color}` }}>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: `${r.color}18`, color: r.color }}>{r.name}</span>
+              <div style={{ fontSize: 11.5, color: 'var(--grey)', marginTop: 8, lineHeight: 1.4 }}>{r.description}</div>
             </div>
           ))}
         </div>
@@ -144,22 +165,22 @@ export default function TeamPage() {
                   Resend
                 </button>
               ) : m.role === 'owner' ? (
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: ROLE_COLOR.owner.bg, color: ROLE_COLOR.owner.text }}>{m.role}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${roleMeta('owner').color}18`, color: roleMeta('owner').color }}>{roleMeta('owner').name}</span>
               ) : (
                 <div style={{ position: 'relative', display: 'inline-block' }}>
                   <button
                     onClick={() => setEditingRole(editingRole === m.id ? null : m.id)}
-                    style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: ROLE_COLOR[m.role].bg, color: ROLE_COLOR[m.role].text, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                    style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${roleMeta(m.role).color}18`, color: roleMeta(m.role).color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
                   >
-                    {m.role} ▾
+                    {roleMeta(m.role).name} ▾
                   </button>
                   {editingRole === m.id && (
-                    <div style={{ position: 'absolute', top: '110%', left: 0, background: 'white', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', zIndex: 10, minWidth: 130, overflow: 'hidden' }}>
-                      {ROLES.filter(r => r !== 'owner').map(r => (
-                        <div key={r} onClick={() => changeRole(m.id, r)} style={{ padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontWeight: m.role === r ? 600 : 400, color: m.role === r ? 'var(--accent)' : 'var(--text)' }}
+                    <div style={{ position: 'absolute', top: '110%', left: 0, background: 'white', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', zIndex: 10, minWidth: 150, overflow: 'hidden' }}>
+                      {assignable.filter(r => r.slug !== 'owner').map(r => (
+                        <div key={r.slug} onClick={() => changeRole(m.id, r.slug)} style={{ padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontWeight: m.role === r.slug ? 600 : 400, color: m.role === r.slug ? 'var(--accent)' : 'var(--text)' }}
                           onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
                           onMouseLeave={e => (e.currentTarget.style.background = 'white')}
-                        >{r}</div>
+                        >{r.name}</div>
                       ))}
                       <div onClick={() => removeMember(m.id)} style={{ padding: '9px 14px', fontSize: 13, cursor: 'pointer', color: 'var(--red)', borderTop: '1px solid var(--border)' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'var(--red-bg)')}
@@ -199,15 +220,15 @@ export default function TeamPage() {
 
             <div style={{ marginBottom: 20 }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Role</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {(['admin', 'member', 'viewer'] as Role[]).map(r => (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
+                {assignable.filter(r => r.slug !== 'owner').map(r => (
                   <div
-                    key={r}
-                    onClick={() => setInviteRole(r)}
-                    style={{ flex: 1, padding: '10px 8px', borderRadius: 8, border: `1.5px solid ${inviteRole === r ? 'var(--accent)' : 'var(--border)'}`, background: inviteRole === r ? '#F0F4FF' : 'white', cursor: 'pointer', textAlign: 'center' }}
+                    key={r.slug}
+                    onClick={() => setInviteRole(r.slug)}
+                    style={{ padding: '10px 8px', borderRadius: 8, border: `1.5px solid ${inviteRole === r.slug ? 'var(--accent)' : 'var(--border)'}`, background: inviteRole === r.slug ? '#F0F4FF' : 'white', cursor: 'pointer', textAlign: 'center' }}
                   >
-                    <div style={{ fontSize: 12, fontWeight: 700, color: ROLE_COLOR[r].text }}>{r}</div>
-                    <div style={{ fontSize: 10.5, color: 'var(--grey)', marginTop: 3, lineHeight: 1.3 }}>{ROLE_DESC[r].split(' — ')[1]}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.name}</div>
+                    <div style={{ fontSize: 10.5, color: 'var(--grey)', marginTop: 3, lineHeight: 1.3 }}>{r.description}</div>
                   </div>
                 ))}
               </div>

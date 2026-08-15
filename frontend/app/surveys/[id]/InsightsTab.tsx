@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import AnalyticsTab from './AnalyticsTab'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -44,24 +44,141 @@ function weekCount(responses: ResponseRow[], weeksAgo: number): number {
 }
 
 // ── Daily timeline ────────────────────────────────────────────────────────────
+type ChartRange = 7 | 30 | 90 | 0
+
+function fmtDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Min px per bar — fewer bars = wider; more bars = narrower + scroll
+const BAR_MIN: Record<ChartRange, number> = { 7: 44, 30: 20, 90: 12, 0: 10 }
+const BAR_GAP: Record<ChartRange, number> = { 7: 8,  30: 4,  90: 3,  0: 2  }
+
 function TimelineChart({ responses }: { responses: ResponseRow[] }) {
+  const [range, setRange] = useState<ChartRange>(30)
+
   if (!responses.length) return <div style={{ color: 'var(--grey)', fontSize: 13, padding: '20px 0' }}>No responses yet.</div>
+
+  const now = Date.now()
+  const inRange = range === 0 ? responses : responses.filter(r => {
+    const t = new Date(r.started_at).getTime()
+    return t >= now - range * 86400000
+  })
+
   const buckets: Record<string, number> = {}
-  responses.forEach(r => {
+  inRange.forEach(r => {
     const day = r.started_at?.slice(0, 10) ?? ''
     if (day) buckets[day] = (buckets[day] ?? 0) + 1
   })
   const days = Object.keys(buckets).sort()
   const max = Math.max(...Object.values(buckets), 1)
+  const total = Object.values(buckets).reduce((s, n) => s + n, 0)
+
+  const minBarPx = BAR_MIN[range]
+  const gap      = BAR_GAP[range]
+  // inner container is at least 100% wide (bars stretch to fill when few),
+  // or as wide as all bars need (enabling scroll when many bars)
+  const innerMinWidth = `max(100%, ${days.length * (minBarPx + gap)}px)`
+
+  const RANGE_OPTS: { val: ChartRange; label: string }[] = [
+    { val: 7,  label: '7D'  },
+    { val: 30, label: '30D' },
+    { val: 90, label: '90D' },
+    { val: 0,  label: 'All' },
+  ]
+
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 90, marginTop: 8, paddingBottom: 18 }}>
-      {days.map(day => (
-        <div key={day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', minWidth: 20 }}>
-          <div style={{ fontSize: 9, color: 'var(--grey)', marginBottom: 2 }}>{buckets[day]}</div>
-          <div style={{ width: '80%', maxWidth: 28, background: 'var(--accent)', borderRadius: '3px 3px 0 0', height: `${Math.round((buckets[day] / max) * 64)}px` }} />
-          <div style={{ fontSize: 8, color: 'var(--grey)', marginTop: 3, transform: 'rotate(-35deg)', whiteSpace: 'nowrap' }}>{day.slice(5)}</div>
+    <div>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: 'var(--grey)' }}>
+          {total} response{total !== 1 ? 's' : ''} · {days.length} day{days.length !== 1 ? 's' : ''}
+          {days.length > 0 && (
+            <span style={{ marginLeft: 6 }}>({fmtDate(days[0])} – {fmtDate(days[days.length - 1])})</span>
+          )}
         </div>
-      ))}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {RANGE_OPTS.map(o => (
+            <button key={o.val} onClick={() => setRange(o.val)} style={{
+              fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: range === o.val ? 'var(--accent)' : 'var(--bg)',
+              color: range === o.val ? 'white' : 'var(--grey)',
+              transition: 'background .15s',
+            }}>{o.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {days.length === 0 ? (
+        <div style={{ color: 'var(--grey)', fontSize: 13, padding: '16px 0' }}>No responses in this period.</div>
+      ) : (
+        /* Scrollable wrapper — scrolls when inner content wider than container */
+        <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
+          {/* Inner bar container — always fills 100% but grows for many bars */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-end',
+            gap,
+            height: 120,
+            paddingBottom: 30,
+            minWidth: innerMinWidth,
+            boxSizing: 'border-box',
+          }}>
+            {days.map(day => {
+              const count = buckets[day]
+              const barH = Math.max(Math.round((count / max) * 80), count > 0 ? 4 : 0)
+              return (
+                <div
+                  key={day}
+                  title={`${fmtDate(day)}: ${count} response${count !== 1 ? 's' : ''}`}
+                  style={{
+                    flex: 1,
+                    minWidth: minBarPx,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    height: '100%',
+                    cursor: 'default',
+                  }}
+                >
+                  {/* Count label above bar */}
+                  <div style={{
+                    fontSize: range === 7 ? 11 : 9,
+                    color: 'var(--accent)',
+                    fontWeight: 700,
+                    marginBottom: 3,
+                    visibility: count > 0 ? 'visible' : 'hidden',
+                  }}>{count}</div>
+                  {/* Bar */}
+                  <div style={{
+                    width: range === 7 ? '60%' : '80%',
+                    maxWidth: range === 7 ? 56 : 32,
+                    background: 'var(--accent)',
+                    borderRadius: '4px 4px 0 0',
+                    height: `${barH}px`,
+                    minHeight: count > 0 ? 4 : 0,
+                    transition: 'height .25s ease',
+                  }} />
+                  {/* Date label — rotated, full "Jul 24" format */}
+                  <div style={{
+                    fontSize: range === 7 ? 10 : 9,
+                    color: 'var(--grey)',
+                    marginTop: 5,
+                    whiteSpace: 'nowrap',
+                    transform: 'rotate(-40deg)',
+                    transformOrigin: 'top center',
+                    lineHeight: 1,
+                  }}>
+                    {fmtDate(day)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

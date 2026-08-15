@@ -10,7 +10,23 @@ const CAT_COLOR: Record<string, string> = {
   Finance: '#8b5cf6', Lifestyle: '#db2777', Education: '#f97316',
 }
 
-const DEMO_TASKS = [
+interface Task {
+  id: number | string
+  cat: string
+  title: string
+  reward: string
+  time: string
+  diff: number
+  eligible: boolean
+  company: string
+  filled: number
+  quota: number
+  desc: string
+  eligReason?: string | null
+  survey_id?: string
+}
+
+const DEMO_TASKS: Task[] = [
   { id: 1, cat: 'Consumer', title: 'New Energy Drink Taste Test', reward: '8.50', time: '8 min', diff: 1, eligible: true, company: 'Beverage Co.', filled: 142, quota: 200, desc: 'Help a leading beverage brand evaluate a new product line. Answer questions about taste, packaging, and brand perception.' },
   { id: 2, cat: 'Technology', title: 'Smartphone App Usability Study', reward: '12.00', time: '12 min', diff: 2, eligible: true, company: 'TechStart Inc.', filled: 89, quota: 150, desc: 'Evaluate the usability of a new productivity app. Share feedback on navigation, features, and overall experience.' },
   { id: 3, cat: 'Healthcare', title: 'Mental Wellness Check-in', reward: '6.00', time: '6 min', diff: 1, eligible: true, company: 'HealthTrack', filled: 201, quota: 300, desc: 'A quick wellness survey exploring daily habits and mental health awareness. All responses are anonymous.' },
@@ -19,7 +35,7 @@ const DEMO_TASKS = [
   { id: 6, cat: 'Education', title: 'Online Learning Preferences', reward: '7.00', time: '7 min', diff: 1, eligible: true, company: 'EduInsights', filled: 78, quota: 200, desc: 'A short survey about your online learning habits, preferred formats, and experiences with e-learning platforms.' },
 ]
 
-const DEMO_MY_TASKS = [
+const DEMO_MY_TASKS: { id: number; title: string; reward: string; status: string; date: string; survey_id?: string }[] = [
   { id: 10, title: 'Brand Perception Survey', reward: '11.00', status: 'completed', date: 'Jun 28, 2026' },
   { id: 11, title: 'Food Delivery App Feedback', reward: '7.50', status: 'completed', date: 'Jun 25, 2026' },
   { id: 12, title: 'Social Media Usage Tracker', reward: '9.50', status: 'in_progress', date: 'Jun 30, 2026' },
@@ -49,15 +65,15 @@ export default function AudienceDashboard() {
   const [filterReward, setFilterReward] = useState('all')
   const [filterTime, setFilterTime] = useState('all')
   const [search, setSearch] = useState('')
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
-  const [tasks, setTasks] = useState(DEMO_TASKS)
+  const [selectedTaskId, setSelectedTaskId] = useState<number | string | null>(null)
+  const [tasks, setTasks] = useState<Task[]>(DEMO_TASKS)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user: u } }) => {
       if (!u) { router.push('/login'); return }
       setUser({ id: u.id, email: u.email, name: u.user_metadata?.full_name })
       // load live tasks from active surveys
-      fetch(`${API}/audience/tasks`).then(r => r.json()).then(d => { if (Array.isArray(d) && d.length) setTasks(d) }).catch(() => {})
+      fetch(`${API}/audience/tasks`).then(r => r.json()).then((d: Task[]) => { if (Array.isArray(d) && d.length) setTasks(d) }).catch(() => {})
     })
   }, [])
 
@@ -267,7 +283,12 @@ export default function AudienceDashboard() {
                 </div>
                 <div style={{ fontFamily: "'Schibsted Grotesk', system-ui", fontWeight: 700, fontSize: 16, color: '#16a34a' }}>${mt.reward}</div>
                 {mt.status === 'in_progress' && (
-                  <button style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#db2777', border: 'none', padding: '7px 14px', borderRadius: 8, cursor: 'pointer' }}>Continue →</button>
+                  <button
+                    onClick={() => mt.survey_id && router.push(`/surveys/${mt.survey_id}/respond`)}
+                    disabled={!mt.survey_id}
+                    style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#db2777', border: 'none', padding: '7px 14px', borderRadius: 8, cursor: mt.survey_id ? 'pointer' : 'not-allowed', opacity: mt.survey_id ? 1 : .6 }}>
+                    Continue →
+                  </button>
                 )}
               </div>
             ))}
@@ -351,7 +372,17 @@ export default function AudienceDashboard() {
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => setSelectedTaskId(null)} style={{ flexShrink: 0, fontSize: 14, fontWeight: 600, color: '#71717a', background: '#f4f4f5', border: 'none', padding: '12px 20px', borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
-                <button style={{ flex: 1, fontSize: 15, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#db2777,#be185d)', border: 'none', padding: 13, borderRadius: 11, cursor: 'pointer', boxShadow: '0 4px 14px rgba(219,39,119,.3)' }}>Start survey →</button>
+                <button
+                  onClick={() => {
+                    if (sel!.survey_id) {
+                      setSelectedTaskId(null)
+                      router.push(`/surveys/${sel!.survey_id}/respond`)
+                    }
+                  }}
+                  disabled={!sel!.survey_id}
+                  style={{ flex: 1, fontSize: 15, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#db2777,#be185d)', border: 'none', padding: 13, borderRadius: 11, cursor: sel!.survey_id ? 'pointer' : 'not-allowed', boxShadow: '0 4px 14px rgba(219,39,119,.3)', opacity: sel!.survey_id ? 1 : .7 }}>
+                  Start survey →
+                </button>
               </div>
             </div>
           </div>

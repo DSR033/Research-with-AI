@@ -46,6 +46,20 @@ export interface QuestionSettings {
   // Constant Sum
   constant_items?: string[]
   constant_total?: number
+  // Picture Choice
+  image_options?: Array<{ label: string; image_url: string }>
+  image_columns?: number
+  allow_multiple?: boolean
+  // Card Sort
+  cards?: string[]
+  sort_categories?: string[]
+  // Pick, Group & Rank
+  pg_items?: string[]
+  pg_groups?: string[]
+  pg_max_picks?: number
+  // Drill-down
+  drill_levels?: string[]
+  drill_options?: Record<string, string[]>
 }
 
 export interface QuestionData {
@@ -61,27 +75,71 @@ export interface QuestionData {
 }
 
 const QUESTION_TYPES = [
-  { type: 'single_choice',  label: '◉ Single choice' },
-  { type: 'multi_select',   label: '☑ Multi-select' },
-  { type: 'dropdown',       label: '▾ Dropdown' },
-  { type: 'yes_no',         label: '⬤ Yes / No' },
-  { type: 'rating',         label: '★ Rating scale' },
-  { type: 'likert_matrix',  label: '▦ Matrix / Likert' },
-  { type: 'nps',            label: '📊 NPS (0–10)' },
-  { type: 'slider',         label: '⟷ Slider' },
-  { type: 'ranking',        label: '⇕ Ranking' },
-  { type: 'numeric_input',  label: '# Numeric input' },
-  { type: 'constant_sum',   label: 'Σ Constant sum' },
-  { type: 'short_text',     label: '✎ Short text' },
-  { type: 'long_text',      label: '📝 Long text' },
-  { type: 'date_time',      label: '📅 Date / time' },
+  // Basic
+  { type: 'single_choice',   label: '◉ Single Select' },
+  { type: 'multi_select',    label: '☑ Multi Select' },
+  { type: 'dropdown',        label: '▾ Dropdown' },
+  { type: 'short_text',      label: '✎ Short Answer' },
+  { type: 'long_text',       label: '📝 Long Text' },
+  { type: 'numeric_input',   label: '# Number' },
+  { type: 'email',           label: '✉ Email' },
+  { type: 'date_time',       label: '📅 Date & Time' },
+  { type: 'rating',          label: '★ Rating' },
+  { type: 'nps',             label: '📊 NPS (0–10)' },
+  { type: 'likert_matrix',   label: '▦ Likert Scale' },
+  { type: 'yes_no',          label: '⬤ Yes / No' },
+  // Advanced
+  { type: 'matrix',          label: '⊟ Matrix / Grid' },
+  { type: 'ranking',         label: '⇕ Ranking' },
+  { type: 'constant_sum',    label: 'Σ Constant Sum' },
+  { type: 'maxdiff',         label: '⤢ MaxDiff' },
+  { type: 'conjoint',        label: '⊕ Conjoint Analysis' },
+  { type: 'heatmap',         label: '🌡 Heatmap' },
+  { type: 'picture_choice',  label: '🖼 Image Choice' },
+  { type: 'image_upload',    label: '📷 Image Upload' },
+  { type: 'file_upload',     label: '📎 File Upload' },
+  { type: 'video_response',  label: '🎥 Video Response' },
+  { type: 'audio_response',  label: '🎙 Audio Response' },
+  { type: 'signature',       label: '✍ Signature' },
+  { type: 'slider',          label: '⟷ Slider' },
+  { type: 'barcode_scanner', label: '▣ Barcode / QR' },
+  { type: 'map_location',    label: '📍 Map / Location' },
+  { type: 'contact_form',    label: '👤 Contact Form' },
+  // Legacy
+  { type: 'card_sort',       label: '🃏 Card sort' },
+  { type: 'pick_group_rank', label: '⊞ Pick, group & rank' },
+  { type: 'drill_down',      label: '▶▶ Drill-down' },
+  // Research
+  { type: 'semantic_differential',  label: '↔ Semantic Differential' },
+  { type: 'bipolar_scale',          label: '⟺ Bipolar Scale' },
+  { type: 'side_by_side_matrix',    label: '⫧ Side-by-Side Matrix' },
+  { type: 'multiple_rating_matrix', label: '⊞ Multiple Rating Matrix' },
+  { type: 'kano_model',             label: '◎ Kano Model' },
+  { type: 'best_worst_scaling',     label: '⊸ Best-Worst Scaling' },
+  { type: 'turf_inputs',            label: '⊳ TURF Inputs' },
+  { type: 'gap_analysis',           label: '⊿ Gap Analysis' },
+  { type: 'demographic_block',      label: '👥 Demographic Block' },
+  { type: 'screening_question',     label: '⊘ Screening Question' },
+  { type: 'quota_question',         label: '⊙ Quota Question' },
+  { type: 'randomized_block',       label: '⇄ Randomized Block' },
+  // Multimedia
+  { type: 'image_gallery',             label: '🖼 Image Gallery' },
+  { type: 'video_embed',               label: '▶ Video Embed' },
+  { type: 'audio_embed',               label: '♪ Audio Embed' },
+  { type: 'interactive_image',         label: '⊕ Interactive Image' },
+  { type: 'carousel',                  label: '↻ Carousel' },
+  { type: 'flip_cards',                label: '⟳ Flip Cards' },
+  { type: 'rich_text',                 label: 'T Rich Text' },
+  { type: 'embedded_html',             label: '⟨⟩ Embedded HTML' },
+  { type: 'website_embed',             label: '⊙ Website Embed' },
+  { type: 'interactive_product_cards', label: '🛍 Product Cards' },
 ]
 
 const TYPE_LABEL: Record<string, string> = Object.fromEntries(QUESTION_TYPES.map(t => [t.type, t.label]))
 
-const HAS_OPTIONS      = ['single_choice', 'multi_select', 'dropdown']
-const HAS_ITEMS        = ['ranking', 'constant_sum']
-const HAS_MATRIX       = ['likert_matrix']
+const HAS_OPTIONS   = ['single_choice', 'multi_select', 'dropdown']
+const HAS_ITEMS     = ['ranking', 'constant_sum']
+const HAS_MATRIX    = ['likert_matrix', 'matrix']
 const CONSTANT_SUM_KEY = 'constant_items'
 
 // ── Reusable small UI ──────────────────────────────────────────────────────────
@@ -165,6 +223,20 @@ export default function QuestionEditor({
     max_val:    question.settings?.max_val,
     unit_label: question.settings?.unit_label ?? '',
     constant_total: question.settings?.constant_total ?? 100,
+    // Picture choice
+    image_options: question.settings?.image_options ?? (question.type === 'picture_choice' ? [{ label: 'Option 1', image_url: '' }, { label: 'Option 2', image_url: '' }] : undefined),
+    image_columns: question.settings?.image_columns ?? 2,
+    allow_multiple: question.settings?.allow_multiple ?? false,
+    // Card sort
+    cards: question.settings?.cards ?? (question.type === 'card_sort' ? ['Card 1', 'Card 2', 'Card 3'] : undefined),
+    sort_categories: question.settings?.sort_categories ?? (question.type === 'card_sort' ? ['Category A', 'Category B'] : undefined),
+    // Pick, group & rank
+    pg_items: question.settings?.pg_items ?? (question.type === 'pick_group_rank' ? ['Item 1', 'Item 2', 'Item 3', 'Item 4'] : undefined),
+    pg_groups: question.settings?.pg_groups ?? (question.type === 'pick_group_rank' ? ['Group A', 'Group B'] : undefined),
+    pg_max_picks: question.settings?.pg_max_picks ?? 3,
+    // Drill-down
+    drill_levels: question.settings?.drill_levels ?? (question.type === 'drill_down' ? ['Level 1', 'Level 2'] : undefined),
+    drill_options: question.settings?.drill_options ?? (question.type === 'drill_down' ? { 'Option A': ['Sub A1', 'Sub A2'], 'Option B': ['Sub B1', 'Sub B2'] } : undefined),
   })
   const [saving, setSaving] = useState(false)
 
@@ -182,6 +254,14 @@ export default function QuestionEditor({
     if (t === 'constant_sum')  set({ constant_items: settings.constant_items?.length ? settings.constant_items : ['Option 1', 'Option 2', 'Option 3'], constant_total: 100 })
     if (HAS_MATRIX.includes(t) && !settings.rows?.length) set({ rows: ['Row 1', 'Row 2'], columns: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'] })
     if (t === 'ranking' && !settings.items?.length) set({ items: ['Item 1', 'Item 2', 'Item 3'] })
+    if (t === 'picture_choice' && !settings.image_options?.length)
+      set({ image_options: [{ label: 'Option 1', image_url: '' }, { label: 'Option 2', image_url: '' }], image_columns: 2, allow_multiple: false })
+    if (t === 'card_sort' && !settings.cards?.length)
+      set({ cards: ['Card 1', 'Card 2', 'Card 3'], sort_categories: ['Category A', 'Category B'] })
+    if (t === 'pick_group_rank' && !settings.pg_items?.length)
+      set({ pg_items: ['Item 1', 'Item 2', 'Item 3', 'Item 4'], pg_groups: ['Group A', 'Group B'], pg_max_picks: 3 })
+    if (t === 'drill_down' && !settings.drill_levels?.length)
+      set({ drill_levels: ['Level 1', 'Level 2'], drill_options: { 'Option A': ['Sub A1', 'Sub A2'], 'Option B': ['Sub B1', 'Sub B2'] } })
   }
 
   const handleSave = async () => {
@@ -452,6 +532,213 @@ export default function QuestionEditor({
           <div style={{ fontSize: 11, color: 'var(--grey)', padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
             💡 Best for budget allocation and importance weighting. Keep items to 7 or fewer.
           </div>
+        </>)}
+
+        {/* ── PICTURE CHOICE ── */}
+        {type === 'picture_choice' && (<>
+          <Row label="Layout">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                <input type="checkbox" checked={s.allow_multiple ?? false} onChange={e => set({ allow_multiple: e.target.checked })} />
+                Allow multiple selections
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                Columns:&nbsp;
+                <select value={s.image_columns ?? 2} onChange={e => set({ image_columns: +e.target.value })} style={{ ...inp, width: 80 }}>
+                  {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            </div>
+          </Row>
+          <Row label="Image options" hint="Enter a label and image URL for each option.">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(s.image_options ?? []).map((opt, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <input
+                      value={opt.label}
+                      onChange={e => { const n = [...(s.image_options ?? [])]; n[i] = { ...n[i], label: e.target.value }; set({ image_options: n }) }}
+                      placeholder={`Label ${i + 1}`}
+                      style={inp}
+                    />
+                    <input
+                      value={opt.image_url}
+                      onChange={e => { const n = [...(s.image_options ?? [])]; n[i] = { ...n[i], image_url: e.target.value }; set({ image_options: n }) }}
+                      placeholder="https://example.com/image.png"
+                      style={inp}
+                    />
+                    {opt.image_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={opt.image_url} alt={opt.label} style={{ height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
+                    )}
+                  </div>
+                  <button
+                    onClick={() => set({ image_options: (s.image_options ?? []).filter((_, j) => j !== i) })}
+                    style={{ border: 'none', background: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}>×</button>
+                </div>
+              ))}
+              <button
+                onClick={() => set({ image_options: [...(s.image_options ?? []), { label: '', image_url: '' }] })}
+                style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600, padding: 0 }}>
+                + Add image option
+              </button>
+            </div>
+          </Row>
+        </>)}
+
+        {/* ── EMAIL ── */}
+        {type === 'email' && (
+          <div style={{ padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, color: '#1d4ed8' }}>
+            Email format is validated automatically. The respondent must enter a valid email address.
+          </div>
+        )}
+
+        {/* ── MATRIX / GRID ── */}
+        {type === 'matrix' && (<>
+          <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#991b1b' }}>
+            Multiple sub-questions share the same response scale. Reduces survey length and improves consistency.
+          </div>
+          <OptionsEditor label="Rows (sub-questions)" values={s.rows ?? ['Row 1', 'Row 2']} onChange={v => set({ rows: v })} addLabel="+ Add row" />
+          <OptionsEditor label="Columns (scale)" values={s.columns ?? ['Poor', 'Fair', 'Good', 'Very Good', 'Excellent']} onChange={v => set({ columns: v })} addLabel="+ Add column" />
+        </>)}
+
+        {/* ── IMAGE UPLOAD ── */}
+        {type === 'image_upload' && (<>
+          <Row label="Accepted formats" hint="Leave blank to accept all image types.">
+            <input value={s.placeholder ?? 'JPG, PNG, GIF, WebP'} onChange={e => set({ placeholder: e.target.value })} style={inp} />
+          </Row>
+          <Row label="Max file size (MB)">
+            <input type="number" min={1} max={50} value={s.max_val ?? 10} onChange={e => set({ max_val: +e.target.value })} style={{ ...inp, width: 120 }} />
+          </Row>
+        </>)}
+
+        {/* ── FILE UPLOAD ── */}
+        {type === 'file_upload' && (<>
+          <Row label="Accepted file types" hint="e.g. PDF, DOCX, XLSX. Leave blank to accept any.">
+            <input value={s.placeholder ?? 'PDF, DOCX, XLSX'} onChange={e => set({ placeholder: e.target.value })} style={inp} />
+          </Row>
+          <Row label="Max file size (MB)">
+            <input type="number" min={1} max={100} value={s.max_val ?? 20} onChange={e => set({ max_val: +e.target.value })} style={{ ...inp, width: 120 }} />
+          </Row>
+        </>)}
+
+        {/* ── SIGNATURE ── */}
+        {type === 'signature' && (
+          <div style={{ padding: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#166534', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontWeight: 600 }}>Digital signature capture</div>
+            <div>Respondents draw their signature using mouse or touch. Saved as a PNG image.</div>
+          </div>
+        )}
+
+        {/* ── CONTACT FORM ── */}
+        {type === 'contact_form' && (<>
+          <div style={{ padding: '8px 12px', background: '#fce7f3', border: '1px solid #fbcfe8', borderRadius: 8, fontSize: 12, color: '#9d174d' }}>
+            Groups common contact fields into a structured block. Configure which fields to show.
+          </div>
+          {['First name', 'Last name', 'Email', 'Phone', 'Company', 'Job title', 'Address'].map(field => (
+            <label key={field} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+              <input type="checkbox" defaultChecked={['First name', 'Last name', 'Email'].includes(field)} />
+              {field}
+            </label>
+          ))}
+        </>)}
+
+        {/* ── COMING SOON fallback ── */}
+        {!['single_choice','multi_select','dropdown','short_text','long_text','numeric_input','email','date_time','rating','nps','likert_matrix','yes_no','matrix','ranking','constant_sum','picture_choice','image_upload','file_upload','signature','slider','contact_form','card_sort','pick_group_rank','drill_down'].includes(type) && (
+          <div style={{ padding: '20px 16px', background: '#fafafa', border: '1.5px dashed #e4e4e7', borderRadius: 10, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 28 }}>🚧</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#18181b' }}>Coming Soon</div>
+            <div style={{ fontSize: 12, color: '#71717a', maxWidth: 220 }}>
+              The full editor for this question type is in development. The title and required setting are saved now.
+            </div>
+          </div>
+        )}
+
+        {/* ── CARD SORT ── */}
+        {type === 'card_sort' && (<>
+          <div style={{ padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, color: '#1d4ed8' }}>
+            Respondents drag each card into one of the categories you define below.
+          </div>
+          <OptionsEditor label="Cards" values={s.cards ?? []} onChange={v => set({ cards: v })} addLabel="+ Add card" />
+          <OptionsEditor label="Categories" values={s.sort_categories ?? []} onChange={v => set({ sort_categories: v })} addLabel="+ Add category" />
+        </>)}
+
+        {/* ── PICK, GROUP & RANK ── */}
+        {type === 'pick_group_rank' && (<>
+          <div style={{ padding: '8px 12px', background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e' }}>
+            Step 1: respondents pick items. Step 2: drag them into groups. Step 3: rank within each group.
+          </div>
+          <OptionsEditor label="Items (pool)" values={s.pg_items ?? []} onChange={v => set({ pg_items: v })} addLabel="+ Add item" />
+          <OptionsEditor label="Groups" values={s.pg_groups ?? []} onChange={v => set({ pg_groups: v })} addLabel="+ Add group" />
+          <Row label="Max picks" hint="How many items the respondent must select in Step 1. Leave blank for all.">
+            <input type="number" min={1} value={s.pg_max_picks ?? ''} onChange={e => set({ pg_max_picks: e.target.value ? +e.target.value : undefined })} placeholder="No limit" style={{ ...inp, width: 120 }} />
+          </Row>
+        </>)}
+
+        {/* ── DRILL-DOWN ── */}
+        {type === 'drill_down' && (<>
+          <div style={{ padding: '8px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#166534' }}>
+            Cascading dropdowns — the second dropdown's options depend on the first selection.
+          </div>
+          <Row label="Level labels" hint="Name each dropdown level (e.g. Country, State, City).">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {(s.drill_levels ?? []).map((lv, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    value={lv}
+                    onChange={e => { const n = [...(s.drill_levels ?? [])]; n[i] = e.target.value; set({ drill_levels: n }) }}
+                    placeholder={`Level ${i + 1} label`}
+                    style={{ ...inp, flex: 1 }}
+                  />
+                  {(s.drill_levels ?? []).length > 2 && (
+                    <button onClick={() => set({ drill_levels: (s.drill_levels ?? []).filter((_, j) => j !== i) })}
+                      style={{ border: 'none', background: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}>×</button>
+                  )}
+                </div>
+              ))}
+              {(s.drill_levels ?? []).length < 4 && (
+                <button onClick={() => set({ drill_levels: [...(s.drill_levels ?? []), `Level ${(s.drill_levels ?? []).length + 1}`] })}
+                  style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600, padding: 0 }}>
+                  + Add level (max 4)
+                </button>
+              )}
+            </div>
+          </Row>
+          <Row label="Top-level options & their sub-options" hint="For each top-level choice, list the sub-options (comma-separated).">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Object.entries(s.drill_options ?? {}).map(([parent, children]) => (
+                <div key={parent} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      value={parent}
+                      onChange={e => {
+                        const updated: Record<string, string[]> = {}
+                        Object.entries(s.drill_options ?? {}).forEach(([k, v]) => { updated[k === parent ? e.target.value : k] = v })
+                        set({ drill_options: updated })
+                      }}
+                      placeholder="Parent option"
+                      style={{ ...inp, flex: 1, fontWeight: 600 }}
+                    />
+                    <button
+                      onClick={() => { const updated = { ...s.drill_options }; delete updated[parent]; set({ drill_options: updated }) }}
+                      style={{ border: 'none', background: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}>×</button>
+                  </div>
+                  <input
+                    value={children.join(', ')}
+                    onChange={e => set({ drill_options: { ...s.drill_options, [parent]: e.target.value.split(',').map(x => x.trim()).filter(Boolean) } })}
+                    placeholder="Sub A1, Sub A2, Sub A3"
+                    style={inp}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--grey)' }}>Comma-separated sub-options for "{parent}"</div>
+                </div>
+              ))}
+              <button
+                onClick={() => set({ drill_options: { ...(s.drill_options ?? {}), [`Option ${Object.keys(s.drill_options ?? {}).length + 1}`]: [] } })}
+                style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600, padding: 0 }}>
+                + Add parent option
+              </button>
+            </div>
+          </Row>
         </>)}
 
       </div>

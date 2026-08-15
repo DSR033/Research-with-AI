@@ -131,8 +131,71 @@ create table if not exists templates (
   created_at  timestamptz default now()
 );
 
+-- ─── Roles (RBAC) ────────────────────────────────────────────────
+-- Every org gets the four system roles seeded below. Custom roles are org-scoped
+-- and freely editable; system roles can have their permissions tuned but cannot
+-- be renamed or deleted. permissions is a flat array of catalog keys — see
+-- frontend/lib/permissions.ts for the authoritative list.
+create table if not exists roles (
+  id          uuid primary key default uuid_generate_v4(),
+  org_id      uuid references organizations(id) on delete cascade,
+  slug        text not null,
+  name        text not null,
+  description text default '',
+  permissions jsonb not null default '[]',
+  is_system   boolean not null default false,
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now(),
+  unique (org_id, slug)
+);
+
+-- profiles.role holds a roles.slug. The old CHECK constraint only allowed the
+-- four built-ins, which blocks custom roles — drop it and let the app validate.
+alter table profiles drop constraint if exists profiles_role_check;
+
+-- ─── Platform super admin ────────────────────────────────────────
+-- Distinct from profiles.role, which is workspace-scoped. This flag grants
+-- access to /platform — the internal panel that manages every account on the
+-- instance. Grant it manually in SQL; it is never settable from the app.
+alter table profiles add column if not exists is_super_admin boolean not null default false;
+
+-- Subscription plan lives on the profile (billing is per-account today).
+alter table profiles add column if not exists plan             text default 'free';
+alter table profiles add column if not exists plan_status      text default 'active';
+alter table profiles add column if not exists plan_period_end  timestamptz;
+
+-- Onboarding wizard (audience/expert role selection) writes here — see
+-- POST/GET /profiles/{user_id}/onboarding in main.py.
+alter table profiles add column if not exists onboarding_data     jsonb default '{}';
+alter table profiles add column if not exists onboarding_complete boolean not null default false;
+
+-- Plan tiers were renamed from free/starter/pro to free/pro/team/enterprise.
+-- 'starter' was $29/mo — the same price point as the new Pro tier, so those
+-- accounts carry over to Pro. The old CHECK rejects 'team' and 'enterprise',
+-- so it has to be replaced before either can be assigned.
+update profiles set plan = 'pro' where plan = 'starter';
+alter table profiles drop constraint if exists profiles_plan_check;
+alter table profiles add constraint profiles_plan_check
+  check (plan in ('free', 'pro', 'team', 'enterprise'));
+
+-- ─── Billing logs ────────────────────────────────────────────────
+create table if not exists billing_logs (
+  id          uuid primary key default uuid_generate_v4(),
+  user_id     uuid references profiles(id) on delete cascade,
+  plan        text not null,
+  prev_plan   text,
+  token       text,
+  amount      text,
+  status      text default 'success',
+  note        text,
+  created_at  timestamptz default now()
+);
+
 -- ─── Indexes ─────────────────────────────────────────────────────
 create index if not exists idx_surveys_org       on surveys(org_id);
+create index if not exists idx_roles_org         on roles(org_id);
+create index if not exists idx_billing_logs_user on billing_logs(user_id);
+create index if not exists idx_profiles_plan     on profiles(plan);
 create index if not exists idx_questions_survey  on questions(survey_id);
 create index if not exists idx_responses_survey  on responses(survey_id);
 create index if not exists idx_answers_response  on answers(response_id);
@@ -161,3 +224,4 @@ alter table responses       enable row level security;
 alter table answers         enable row level security;
 alter table ai_analysis     enable row level security;
 alter table templates       enable row level security;
+alter table roles           enable row level security;
