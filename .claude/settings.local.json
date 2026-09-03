@@ -83,7 +83,19 @@
       "Bash(python3 -c \"import sys,json; print\\('Unread:', json.load\\(sys.stdin\\)['count']\\)\")",
       "Bash(sleep 3)",
       "Bash(curl -s http://localhost:8000/notifications?user_id=__TRACKED_VAR__)",
-      "Bash(curl -s http://localhost:8000/notifications/unread-count?user_id=__TRACKED_VAR__)"
+      "Bash(curl -s http://localhost:8000/notifications/unread-count?user_id=__TRACKED_VAR__)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(git -C /Users/duggu/Claude/Projects/Survey add backend/main.py frontend/app/login/page.tsx frontend/app/surveys/[id]/page.tsx frontend/components/TopBar.tsx frontend/proxy.ts frontend/app/audience/ frontend/app/expert/ frontend/app/marketplace/ frontend/app/onboarding/)",
+      "Bash(curl -s http://localhost:8000/surveys)",
+      "Bash(curl -s --max-time 3 http://localhost:8000/health)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(ls venv *)",
+      "Bash(ls .venv)",
+      "Bash(python3 -c \"import main\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(kill -9 6706 6708)",
+      "Bash(curl -s --max-time 3 http://localhost:8000/)",
+      "Bash(curl -s --max-time 5 -X POST http://localhost:8000/surveys -H \"Content-Type: application/json\" -d '{\"title\":\"Test\",\"mode\":\"classic\",\"status\":\"draft\",\"created_by\":null}')"
     ]
   }
 }

@@ -110,6 +110,9 @@ export function visibleQuestions(
   return ordered.filter(q => !hidden.has(q.id)).map(q => q.id)
 }
 
+// Sentinel returned when a logic rule terminates the respondent (screen-out)
+export const LOGIC_TERMINATED = '__logic_terminated__'
+
 // ── Conversational mode: next question after answering ─────────────────────────
 
 export function nextQuestion(
@@ -127,7 +130,7 @@ export function nextQuestion(
   for (const rule of applicable) {
     const met = evalCondition(rule.condition, answers)
     if (!met) continue
-    if (rule.action === 'end_survey') return null
+    if (rule.action === 'end_survey') return LOGIC_TERMINATED
     if (rule.action === 'skip_to' && rule.target_question) return rule.target_question
   }
 

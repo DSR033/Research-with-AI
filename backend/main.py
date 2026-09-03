@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -60,7 +61,44 @@ def health():
 @app.get("/surveys")
 def list_surveys():
     result = supabase.table("surveys").select("*").order("created_at", desc=True).execute()
-    return result.data
+    surveys = result.data
+    if not surveys:
+        return surveys
+
+    try:
+        resp_data = supabase.table("responses").select("survey_id,status,started_at").execute().data
+        resp_counts: dict = {}
+        completed_counts: dict = {}
+        last_response_at: dict = {}
+        for r in resp_data:
+            sid = r.get("survey_id", "")
+            resp_counts[sid] = resp_counts.get(sid, 0) + 1
+            if r.get("status") == "complete":
+                completed_counts[sid] = completed_counts.get(sid, 0) + 1
+            ts = r.get("started_at", "")
+            if ts and ts > last_response_at.get(sid, ""):
+                last_response_at[sid] = ts
+    except Exception:
+        resp_counts = {}
+        completed_counts = {}
+        last_response_at = {}
+
+    try:
+        q_data = supabase.table("questions").select("survey_id").execute().data
+        q_counts: dict = {}
+        for q in q_data:
+            sid = q.get("survey_id", "")
+            q_counts[sid] = q_counts.get(sid, 0) + 1
+    except Exception:
+        q_counts = {}
+
+    for s in surveys:
+        s["response_count"] = resp_counts.get(s["id"], 0)
+        s["completed_count"] = completed_counts.get(s["id"], 0)
+        s["last_response_at"] = last_response_at.get(s["id"], None)
+        s["question_count"] = q_counts.get(s["id"], 0)
+
+    return surveys
 
 
 @app.post("/surveys")
@@ -226,8 +264,19 @@ def invite_user(payload: dict):
 
     if not email:
         raise HTTPException(400, "email is required")
-    if role not in ("admin", "member", "viewer"):
-        raise HTTPException(400, "role must be admin, member, or viewer")
+    if role == "owner":
+        raise HTTPException(400, "the Owner role cannot be assigned by invite")
+    # Any custom role defined in /admin/roles is invitable; only verify it exists.
+    try:
+        known = supabase.table("roles").select("slug").eq("slug", role).execute().data
+        if not known and role not in SYSTEM_ROLE_SLUGS:
+            raise HTTPException(400, f"unknown role '{role}'")
+    except HTTPException:
+        raise
+    except Exception:
+        # Roles table not provisioned yet — fall back to the built-in slugs.
+        if role not in SYSTEM_ROLE_SLUGS:
+            raise HTTPException(400, f"unknown role '{role}'")
 
     redirect_to = f"{FRONTEND_URL}/auth/callback?next=/"
 
@@ -264,6 +313,454 @@ def invite_user(payload: dict):
                 f"{email} has been invited as {role}. They'll receive a magic-link email.")
 
     return {"invited": email, "role": role, "redirect_to": redirect_to}
+
+
+# ─── Roles & permissions (RBAC) ──────────────────────────────────────────────
+
+# Mirrors frontend/lib/permissions.ts. Keep both in sync when adding permissions —
+# the frontend renders the catalog, this list is what the API will accept.
+ALL_PERMISSIONS = [
+    "surveys.view", "surveys.create", "surveys.edit", "surveys.publish", "surveys.delete",
+    "responses.view", "responses.export", "responses.delete",
+    "insights.view", "insights.run_ai", "insights.export", "expert.run",
+    "media.view", "media.upload", "media.delete",
+    "team.view", "team.invite", "team.assign_role", "team.remove",
+    "roles.view", "roles.manage",
+    "billing.view", "billing.manage",
+    "org.view", "org.edit", "org.gdpr",
+]
+
+MEMBER_PERMISSIONS = [
+    "surveys.view", "surveys.create", "surveys.edit", "surveys.publish",
+    "responses.view", "responses.export",
+    "insights.view", "insights.run_ai", "insights.export", "expert.run",
+    "media.view", "media.upload",
+    "team.view",
+]
+
+VIEWER_PERMISSIONS = [
+    "surveys.view", "responses.view", "insights.view", "media.view", "team.view",
+]
+
+SYSTEM_ROLES = [
+    {
+        "slug": "owner", "name": "Owner",
+        "description": "Full access to everything, including billing and workspace deletion.",
+        "permissions": ALL_PERMISSIONS,
+    },
+    {
+        "slug": "admin", "name": "Admin",
+        "description": "Manages the team, roles and workspace settings. No billing access.",
+        "permissions": [p for p in ALL_PERMISSIONS if p != "billing.manage"],
+    },
+    {
+        "slug": "member", "name": "Member",
+        "description": "Builds and runs surveys, and reads the results.",
+        "permissions": MEMBER_PERMISSIONS,
+    },
+    {
+        "slug": "viewer", "name": "Viewer",
+        "description": "Read-only access to surveys, responses and insights.",
+        "permissions": VIEWER_PERMISSIONS,
+    },
+]
+
+SYSTEM_ROLE_SLUGS = {r["slug"] for r in SYSTEM_ROLES}
+
+
+def _slugify(name: str) -> str:
+    import re
+    return re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", name.lower().strip()))
+
+
+def _member_counts(org_id: Optional[str]) -> dict:
+    """Map role slug -> number of profiles holding it."""
+    try:
+        q = supabase.table("profiles").select("role")
+        if org_id:
+            q = q.eq("org_id", org_id)
+        rows = q.execute().data or []
+    except Exception:
+        return {}
+    counts: dict = {}
+    for row in rows:
+        slug = row.get("role")
+        if slug:
+            counts[slug] = counts.get(slug, 0) + 1
+    return counts
+
+
+def _seed_system_roles(org_id: Optional[str]) -> list:
+    """Insert the four built-in roles for an org that has none yet."""
+    seeded = []
+    for preset in SYSTEM_ROLES:
+        try:
+            result = supabase.table("roles").insert({
+                "org_id": org_id,
+                "slug": preset["slug"],
+                "name": preset["name"],
+                "description": preset["description"],
+                "permissions": preset["permissions"],
+                "is_system": True,
+            }).execute()
+            if result.data:
+                seeded.append(result.data[0])
+        except Exception:
+            # Already present (unique org_id+slug) or table missing — skip.
+            pass
+    return seeded
+
+
+@app.get("/admin/permissions")
+def list_permissions():
+    """Return the permission catalog the API will accept."""
+    return {"permissions": ALL_PERMISSIONS}
+
+
+@app.get("/admin/roles")
+def list_roles(org_id: str = ""):
+    """List roles for an org, seeding the system roles on first access."""
+    oid = org_id or None
+    try:
+        q = supabase.table("roles").select("*")
+        if oid:
+            q = q.eq("org_id", oid)
+        rows = q.order("is_system", desc=True).order("created_at").execute().data or []
+    except Exception:
+        # Table not created yet — let the frontend fall back to its built-in presets.
+        return {"roles": []}
+
+    if not rows:
+        rows = _seed_system_roles(oid)
+
+    counts = _member_counts(oid)
+    return {
+        "roles": [{
+            "id": r["id"],
+            "slug": r["slug"],
+            "name": r["name"],
+            "description": r.get("description") or "",
+            "permissions": r.get("permissions") or [],
+            "is_system": bool(r.get("is_system")),
+            "member_count": counts.get(r["slug"], 0),
+        } for r in rows]
+    }
+
+
+@app.post("/admin/roles")
+def create_role(payload: dict):
+    """Create a custom role."""
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    permissions = payload.get("permissions") or []
+    if not isinstance(permissions, list) or not permissions:
+        raise HTTPException(400, "at least one permission is required")
+
+    unknown = [p for p in permissions if p not in ALL_PERMISSIONS]
+    if unknown:
+        raise HTTPException(400, f"unknown permissions: {', '.join(unknown)}")
+
+    slug = (payload.get("slug") or _slugify(name))
+    if slug in SYSTEM_ROLE_SLUGS:
+        raise HTTPException(400, f"'{slug}' is reserved for a system role")
+
+    org_id = payload.get("org_id") or None
+
+    try:
+        result = supabase.table("roles").insert({
+            "org_id": org_id,
+            "slug": slug,
+            "name": name,
+            "description": (payload.get("description") or "").strip(),
+            "permissions": permissions,
+            "is_system": False,
+        }).execute()
+    except Exception as e:
+        raise HTTPException(500, f"could not create role: {e}")
+
+    if not result.data:
+        raise HTTPException(500, "could not create role")
+
+    row = result.data[0]
+    return {"role": {
+        "id": row["id"], "slug": row["slug"], "name": row["name"],
+        "description": row.get("description") or "",
+        "permissions": row.get("permissions") or [],
+        "is_system": False, "member_count": 0,
+    }}
+
+
+@app.patch("/admin/roles/{role_id}")
+def update_role(role_id: str, payload: dict):
+    """Update a role. System roles accept permission changes but keep their name."""
+    try:
+        existing = supabase.table("roles").select("*").eq("id", role_id).execute().data
+    except Exception as e:
+        raise HTTPException(500, f"could not load role: {e}")
+    if not existing:
+        raise HTTPException(404, "role not found")
+
+    role = existing[0]
+    if role["slug"] == "owner":
+        raise HTTPException(403, "the Owner role cannot be modified")
+
+    updates: dict = {}
+
+    if "permissions" in payload:
+        permissions = payload["permissions"] or []
+        if not isinstance(permissions, list) or not permissions:
+            raise HTTPException(400, "at least one permission is required")
+        unknown = [p for p in permissions if p not in ALL_PERMISSIONS]
+        if unknown:
+            raise HTTPException(400, f"unknown permissions: {', '.join(unknown)}")
+        updates["permissions"] = permissions
+
+    if "description" in payload:
+        updates["description"] = (payload.get("description") or "").strip()
+
+    # System role names are fixed so the UI and seeded data stay predictable.
+    if "name" in payload and not role.get("is_system"):
+        name = (payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(400, "name cannot be empty")
+        updates["name"] = name
+
+    if not updates:
+        raise HTTPException(400, "nothing to update")
+
+    updates["updated_at"] = "now()"
+
+    try:
+        result = supabase.table("roles").update(updates).eq("id", role_id).execute()
+    except Exception as e:
+        raise HTTPException(500, f"could not update role: {e}")
+
+    row = (result.data or [{}])[0] or {**role, **updates}
+    counts = _member_counts(role.get("org_id"))
+    return {"role": {
+        "id": role_id, "slug": row.get("slug", role["slug"]),
+        "name": row.get("name", role["name"]),
+        "description": row.get("description") or "",
+        "permissions": row.get("permissions") or [],
+        "is_system": bool(role.get("is_system")),
+        "member_count": counts.get(role["slug"], 0),
+    }}
+
+
+@app.delete("/admin/roles/{role_id}")
+def delete_role(role_id: str):
+    """Delete a custom role. Members holding it fall back to viewer."""
+    try:
+        existing = supabase.table("roles").select("*").eq("id", role_id).execute().data
+    except Exception as e:
+        raise HTTPException(500, f"could not load role: {e}")
+    if not existing:
+        raise HTTPException(404, "role not found")
+
+    role = existing[0]
+    if role.get("is_system"):
+        raise HTTPException(403, "system roles cannot be deleted")
+
+    # Anyone still on this role would otherwise be left with a dangling slug.
+    try:
+        q = supabase.table("profiles").update({"role": "viewer"}).eq("role", role["slug"])
+        if role.get("org_id"):
+            q = q.eq("org_id", role["org_id"])
+        q.execute()
+    except Exception:
+        pass
+
+    try:
+        supabase.table("roles").delete().eq("id", role_id).execute()
+    except Exception as e:
+        raise HTTPException(500, f"could not delete role: {e}")
+
+    return {"deleted": role_id, "reassigned_to": "viewer"}
+
+
+# ─── Platform super admin ────────────────────────────────────────────────────
+# Everything below is gated on profiles.is_super_admin — a separate flag from the
+# workspace-scoped profiles.role. Grant it in SQL only; nothing in the app sets it.
+
+def _require_super_admin(user_id: str) -> dict:
+    """Raise unless the caller is a platform super admin. Returns their profile."""
+    if not user_id:
+        raise HTTPException(401, "user_id is required")
+    try:
+        rows = supabase.table("profiles").select(
+            "id, full_name, is_super_admin"
+        ).eq("id", user_id).execute().data
+    except Exception as e:
+        raise HTTPException(500, f"could not verify permissions: {e}")
+    if not rows:
+        raise HTTPException(404, "profile not found")
+    if not rows[0].get("is_super_admin"):
+        raise HTTPException(403, "platform admin access required")
+    return rows[0]
+
+
+@app.get("/platform/stats")
+def platform_stats(user_id: str = ""):
+    """Instance-wide totals for the platform overview."""
+    _require_super_admin(user_id)
+
+    try:
+        profiles = supabase.table("profiles").select("plan, plan_status, created_at").execute().data or []
+    except Exception as e:
+        raise HTTPException(500, f"could not load accounts: {e}")
+
+    def _count(table: str) -> int:
+        try:
+            return len(supabase.table(table).select("id").execute().data or [])
+        except Exception:
+            return 0
+
+    distribution = {k: 0 for k in PLANS}
+    mrr = 0
+    for p in profiles:
+        plan = p.get("plan") or "free"
+        distribution[plan] = distribution.get(plan, 0) + 1
+        if p.get("plan_status") == "active":
+            mrr += PLANS.get(plan, {}).get("monthly", 0)
+
+    paying = sum(distribution.get(p, 0) for p in PAID_PLANS)
+    total = len(profiles)
+
+    return {
+        "accounts": total,
+        "paying_accounts": paying,
+        "conversion_pct": round((paying / total * 100), 1) if total else 0.0,
+        "mrr": mrr,
+        "surveys": _count("surveys"),
+        "responses": _count("responses"),
+        "distribution": distribution,
+        "past_due": sum(1 for p in profiles if p.get("plan_status") == "past_due"),
+    }
+
+
+@app.get("/platform/accounts")
+def platform_accounts(user_id: str = "", search: str = "", plan: str = ""):
+    """List every account on the instance, with plan and activity counts."""
+    _require_super_admin(user_id)
+
+    try:
+        rows = supabase.table("profiles").select(
+            "id, full_name, org_id, role, plan, plan_status, plan_period_end, created_at, is_super_admin"
+        ).order("created_at", desc=True).execute().data or []
+    except Exception as e:
+        raise HTTPException(500, f"could not load accounts: {e}")
+
+    # Survey counts per account, resolved in one pass rather than N queries.
+    survey_counts: dict = {}
+    try:
+        for s in supabase.table("surveys").select("created_by").execute().data or []:
+            owner = s.get("created_by")
+            if owner:
+                survey_counts[owner] = survey_counts.get(owner, 0) + 1
+    except Exception:
+        pass
+
+    org_names: dict = {}
+    try:
+        for o in supabase.table("organizations").select("id, name").execute().data or []:
+            org_names[o["id"]] = o["name"]
+    except Exception:
+        pass
+
+    accounts = []
+    for r in rows:
+        if plan and (r.get("plan") or "free") != plan:
+            continue
+        name = r.get("full_name") or ""
+        if search and search.lower() not in name.lower() and search.lower() not in r["id"].lower():
+            continue
+        accounts.append({
+            "id": r["id"],
+            "name": name or "Unnamed account",
+            "org_name": org_names.get(r.get("org_id")) or "—",
+            "role": r.get("role") or "member",
+            "plan": r.get("plan") or "free",
+            "plan_status": r.get("plan_status") or "active",
+            "plan_period_end": r.get("plan_period_end"),
+            "surveys": survey_counts.get(r["id"], 0),
+            "created_at": r.get("created_at"),
+            "is_super_admin": bool(r.get("is_super_admin")),
+        })
+
+    return {"accounts": accounts, "total": len(accounts)}
+
+
+@app.patch("/platform/accounts/{account_id}/plan")
+def platform_set_plan(account_id: str, payload: dict, user_id: str = ""):
+    """Override an account's plan. Logged to billing_logs with the stated reason."""
+    admin = _require_super_admin(user_id)
+
+    plan = payload.get("plan")
+    if plan not in PLANS:
+        raise HTTPException(400, f"plan must be one of: {', '.join(PLANS)}")
+
+    reason = (payload.get("reason") or "").strip()
+    if not reason:
+        raise HTTPException(400, "a reason is required for a manual plan change")
+
+    try:
+        existing = supabase.table("profiles").select("plan").eq("id", account_id).execute().data
+    except Exception as e:
+        raise HTTPException(500, f"could not load account: {e}")
+    if not existing:
+        raise HTTPException(404, "account not found")
+
+    prev_plan = existing[0].get("plan") or "free"
+    if prev_plan == plan:
+        raise HTTPException(400, f"account is already on the {plan} plan")
+
+    status = payload.get("plan_status") or "active"
+    try:
+        supabase.table("profiles").update({
+            "plan": plan,
+            "plan_status": status,
+        }).eq("id", account_id).execute()
+    except Exception as e:
+        raise HTTPException(500, f"could not update plan: {e}")
+
+    admin_name = admin.get("full_name") or "platform admin"
+    try:
+        supabase.table("billing_logs").insert({
+            "user_id": account_id,
+            "plan": plan,
+            "prev_plan": prev_plan,
+            "token": "ADMIN",
+            "amount": PLAN_PRICES.get(plan, "$0.00"),
+            "status": "manual",
+            "note": f"Set to {plan} by {admin_name} — {reason}",
+        }).execute()
+    except Exception:
+        pass
+
+    _notify(account_id, "plan_change",
+            f"Your plan is now {PLANS[plan]['label']}",
+            f"A platform admin updated your plan from {prev_plan} to {plan}. {reason}")
+
+    return {"account_id": account_id, "plan": plan, "prev_plan": prev_plan, "plan_status": status}
+
+
+@app.get("/platform/me")
+def platform_me(user_id: str = ""):
+    """Cheap check the frontend uses to decide whether to render /platform."""
+    if not user_id:
+        return {"is_super_admin": False}
+    try:
+        rows = supabase.table("profiles").select("is_super_admin, full_name").eq("id", user_id).execute().data
+    except Exception:
+        return {"is_super_admin": False}
+    if not rows:
+        return {"is_super_admin": False}
+    return {
+        "is_super_admin": bool(rows[0].get("is_super_admin")),
+        "name": rows[0].get("full_name") or "",
+    }
 
 
 # ─── Templates ────────────────────────────────────────────────────────────────
@@ -762,7 +1259,14 @@ def export_csv(survey_id: str):
 
 # ─── Billing ─────────────────────────────────────────────────────────────────
 
-PLAN_PRICES = {"starter": "$29.00", "pro": "$79.00"}
+PLANS = {
+    "free":       {"price": "$0.00",  "monthly": 0,  "label": "Free"},
+    "pro":        {"price": "$29.00", "monthly": 29, "label": "Pro"},
+    "team":       {"price": "$79.00", "monthly": 79, "label": "Team"},
+    "enterprise": {"price": "Custom", "monthly": 0,  "label": "Enterprise"},
+}
+PLAN_PRICES = {k: v["price"] for k, v in PLANS.items()}
+PAID_PLANS = ("pro", "team", "enterprise")
 
 @app.post("/billing/token-upgrade")
 def token_upgrade(payload: dict):
@@ -771,8 +1275,8 @@ def token_upgrade(payload: dict):
     plan    = payload.get("plan")
     token   = payload.get("token", "").strip()
 
-    if not user_id or plan not in ("starter", "pro"):
-        raise HTTPException(400, "user_id and a valid plan (starter/pro) are required")
+    if not user_id or plan not in PAID_PLANS:
+        raise HTTPException(400, f"user_id and a valid plan ({'/'.join(PAID_PLANS)}) are required")
     if not token:
         raise HTTPException(400, "Payment token is required")
 
@@ -800,11 +1304,12 @@ def token_upgrade(payload: dict):
         "note": f"Upgraded from {prev_plan} to {plan} via payment token",
     }).execute()
 
+    label = PLANS[plan]["label"]
     _notify(user_id, "plan_upgrade",
-            f"Plan upgraded to {plan.capitalize()} 🎉",
-            f"You're now on the {plan.capitalize()} plan ({PLAN_PRICES.get(plan, '')}). Enjoy your new limits!")
+            f"Plan upgraded to {label} 🎉",
+            f"You're now on the {label} plan ({PLAN_PRICES.get(plan, '')}). Enjoy your new limits!")
 
-    return {"success": True, "plan": plan, "message": f"Successfully upgraded to {plan.capitalize()} plan"}
+    return {"success": True, "plan": plan, "message": f"Successfully upgraded to {label} plan"}
 
 
 @app.get("/billing/logs")
@@ -999,50 +1504,153 @@ Generate 4-8 questions. Make them specific, unbiased, and directly relevant to t
     return {"title": data["title"], "questions": created}
 
 
-# ─── AI: Expert Review ───────────────────────────────────────────────────────
+# ─── Expert Review (rule-based) ──────────────────────────────────────────────
+
+BIAS_PHRASES = [
+    "don't you think", "don't you agree", "wouldn't you", "isn't it obvious",
+    "as we all know", "everyone knows", "of course", "obviously", "surely",
+    "don't you feel", "clearly you", "needless to say",
+]
+ABSOLUTE_WORDS = ["always", "never", "all", "every", "none", "everyone", "nobody"]
+VAGUE_WORDS    = ["something", "stuff", "things", "etc", "whatever", "anything", "various"]
+PII_SIGNALS    = ["email", "phone", "address", "date of birth", "dob", "ssn", "passport",
+                  "national id", "social security", "credit card", "bank account"]
+
+WEIGHTS = {"Clarity": 30, "Structure": 25, "Bias & Fairness": 20, "Logic": 15, "Compliance": 10}
+
+
+def _rule_review(questions: list, survey_title: str = "") -> dict:
+    findings: list[dict] = []
+    scores = {k: 100 for k in WEIGHTS}
+    n = len(questions)
+
+    # ── Structure ──────────────────────────────────────────────────────────────
+    if n == 0:
+        findings.append({"severity": "warning", "category": "Structure",
+                         "text": "No questions found. Add at least one question before reviewing."})
+        scores["Structure"] = 0
+    elif n > 20:
+        findings.append({"severity": "warning", "category": "Structure",
+                         "text": f"Survey has {n} questions. Surveys over 20 questions typically see completion rates drop below 50%."})
+        scores["Structure"] -= 25
+    elif n > 12:
+        findings.append({"severity": "suggestion", "category": "Structure",
+                         "text": f"Survey has {n} questions. Under 12 is the sweet spot for completion rates above 80%."})
+        scores["Structure"] -= 10
+    else:
+        findings.append({"severity": "pass", "category": "Structure",
+                         "text": f"Survey length ({n} questions) is within the recommended range for 80%+ completion."})
+
+    if n > 0:
+        req = sum(1 for q in questions if q.get("required"))
+        if req == 0 and n > 2:
+            findings.append({"severity": "suggestion", "category": "Structure",
+                             "text": "No required questions. Mark at least key questions as required to ensure data completeness."})
+            scores["Structure"] -= 8
+        elif req == n and n > 4:
+            findings.append({"severity": "suggestion", "category": "Structure",
+                             "text": "Every question is required. Allowing a few optional questions reduces drop-off."})
+            scores["Structure"] -= 5
+        else:
+            findings.append({"severity": "pass", "category": "Structure",
+                             "text": "Required-field balance looks good — key questions are required, others optional."})
+
+    # ── Per-question checks ────────────────────────────────────────────────────
+    seen_titles: set[str] = set()
+    for i, q in enumerate(questions):
+        qnum  = i + 1
+        title = (q.get("title") or "").strip()
+        tl    = title.lower()
+        qtype = q.get("type", "")
+
+        # Clarity — empty / too short / too long
+        if not title:
+            findings.append({"severity": "warning", "category": "Clarity",
+                             "text": f"Q{qnum}: Question has no text. Add clear wording before publishing."})
+            scores["Clarity"] = max(0, scores["Clarity"] - 15)
+        elif len(title.split()) < 3:
+            findings.append({"severity": "suggestion", "category": "Clarity",
+                             "text": f"Q{qnum}: Very short question text (\"{title}\"). Ensure it's unambiguous to respondents."})
+            scores["Clarity"] = max(0, scores["Clarity"] - 6)
+        elif len(title) > 220:
+            findings.append({"severity": "suggestion", "category": "Clarity",
+                             "text": f"Q{qnum}: Long question ({len(title)} chars). Shorter questions reduce cognitive load."})
+            scores["Clarity"] = max(0, scores["Clarity"] - 5)
+
+        # Clarity — vague words
+        for w in VAGUE_WORDS:
+            if w in tl:
+                findings.append({"severity": "suggestion", "category": "Clarity",
+                                 "text": f"Q{qnum}: Vague term \"{w}\" detected. Be specific to get actionable answers."})
+                scores["Clarity"] = max(0, scores["Clarity"] - 5)
+                break
+
+        # Bias — leading phrases
+        for phrase in BIAS_PHRASES:
+            if phrase in tl:
+                findings.append({"severity": "warning", "category": "Bias & Fairness",
+                                 "text": f"Q{qnum}: Leading phrase \"{phrase}\" found. Rephrase to neutral wording."})
+                scores["Bias & Fairness"] = max(0, scores["Bias & Fairness"] - 22)
+                break
+
+        # Bias — absolute words
+        for w in ABSOLUTE_WORDS:
+            if f" {w} " in f" {tl} " or tl.startswith(w + " ") or tl.endswith(" " + w):
+                findings.append({"severity": "suggestion", "category": "Bias & Fairness",
+                                 "text": f"Q{qnum}: Absolute term \"{w}\" may not reflect nuanced experience. Consider softer phrasing."})
+                scores["Bias & Fairness"] = max(0, scores["Bias & Fairness"] - 8)
+                break
+
+        # Logic — duplicate text
+        key = tl.strip("?. ")
+        if key and key in seen_titles:
+            findings.append({"severity": "warning", "category": "Logic",
+                             "text": f"Q{qnum}: Duplicate question text detected. Remove or differentiate it."})
+            scores["Logic"] = max(0, scores["Logic"] - 18)
+        seen_titles.add(key)
+
+    # Bias pass if no issues
+    if not any(f["category"] == "Bias & Fairness" and f["severity"] != "pass" for f in findings):
+        findings.append({"severity": "pass", "category": "Bias & Fairness",
+                         "text": "No leading phrases or absolute language detected. Questions appear neutrally worded."})
+
+    # Logic pass if no issues
+    if not any(f["category"] == "Logic" and f["severity"] != "pass" for f in findings):
+        findings.append({"severity": "pass", "category": "Logic",
+                         "text": "No duplicate or conflicting questions detected."})
+
+    # Clarity pass if no issues
+    if not any(f["category"] == "Clarity" and f["severity"] in ("warning", "suggestion") for f in findings):
+        findings.append({"severity": "pass", "category": "Clarity",
+                         "text": "All questions are clearly worded and appropriately sized."})
+
+    # ── Compliance ─────────────────────────────────────────────────────────────
+    all_text = " ".join((q.get("title") or "") for q in questions).lower() + " " + survey_title.lower()
+    has_pii = any(sig in all_text for sig in PII_SIGNALS)
+    if has_pii:
+        findings.append({"severity": "suggestion", "category": "Compliance",
+                         "text": "Survey appears to collect personal data. Ensure a consent statement and privacy notice link are included."})
+        scores["Compliance"] -= 20
+    else:
+        findings.append({"severity": "pass", "category": "Compliance",
+                         "text": "No obvious PII collection detected. Good for respondent privacy."})
+
+    # ── Overall score ──────────────────────────────────────────────────────────
+    overall = round(sum(scores[c] * WEIGHTS[c] / 100 for c in WEIGHTS))
+    categories = [{"name": c, "score": scores[c], "weight": WEIGHTS[c]} for c in WEIGHTS]
+
+    return {"overall_score": overall, "categories": categories, "findings": findings}
+
 
 @app.post("/surveys/{survey_id}/expert-review")
 def expert_review(survey_id: str):
-    # Fetch survey + questions
-    survey = supabase.table("surveys").select("title").eq("id", survey_id).single().execute().data
-    questions = supabase.table("questions").select("title, type, required").eq("survey_id", survey_id).order("position").execute().data
-
-    if not questions:
-        return {"findings": [{"severity": "warning", "text": "No questions to review yet."}]}
-
-    q_list = "\n".join(f"{i+1}. [{q['type']}] {q['title']}" for i, q in enumerate(questions))
-
-    response = ai.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=2048,
-        system="""You are a survey methodology expert. Review surveys for:
-- Leading or biased questions
-- Clarity and specificity
-- Appropriate question types
-- Survey length and flow
-- Missing essential questions
-
-Return ONLY valid JSON (no markdown) with this structure:
-{
-  "findings": [
-    {"severity": "warning|suggestion|pass", "text": "Finding description"}
-  ],
-  "overall_score": 1-10,
-  "summary": "One sentence overall assessment"
-}
-
-Be specific and actionable. 3-6 findings is ideal.""",
-        messages=[{
-            "role": "user",
-            "content": f"Survey: \"{survey['title']}\"\n\nQuestions:\n{q_list}"
-        }],
-    )
-
-    text = next(b.text for b in response.content if b.type == "text")
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return {"findings": [{"severity": "warning", "text": text}], "overall_score": 0, "summary": ""}
+        survey = supabase.table("surveys").select("title").eq("id", survey_id).single().execute().data
+        questions = supabase.table("questions").select("title, type, required").eq("survey_id", survey_id).order("position").execute().data
+    except Exception:
+        survey = {"title": ""}
+        questions = []
+    return _rule_review(questions or [], (survey or {}).get("title", ""))
 
 
 # ─── AI: Ask Your Data ───────────────────────────────────────────────────────
@@ -1202,3 +1810,156 @@ def gdpr_delete_account(payload: dict):
         pass  # If auth delete fails, data is still gone
 
     return {"deleted": True}
+
+
+# ── Onboarding profile ──────────────────────────────────────────────────────
+
+@app.post("/profiles/{user_id}/onboarding")
+def save_onboarding(user_id: str, payload: dict):
+    """Store role + profile data collected during the onboarding wizard."""
+    existing = supabase.table("profiles").select("id").eq("id", user_id).execute()
+    data = {
+        "id": user_id,
+        "role": payload.get("role"),
+        "onboarding_data": payload,
+        "onboarding_complete": True,
+    }
+    if existing.data:
+        supabase.table("profiles").update(data).eq("id", user_id).execute()
+    else:
+        supabase.table("profiles").insert(data).execute()
+    return {"ok": True}
+
+
+@app.get("/profiles/{user_id}/onboarding")
+def get_onboarding(user_id: str):
+    """Return role and onboarding data for role-based routing."""
+    result = supabase.table("profiles").select("role,onboarding_data,onboarding_complete").eq("id", user_id).execute()
+    if not result.data:
+        return {"role": None, "onboarding_complete": False}
+    return result.data[0]
+
+
+# ── Audience tasks ──────────────────────────────────────────────────────────
+
+@app.get("/audience/tasks")
+def get_audience_tasks(user_id: str = ""):
+    """Return published surveys formatted as respondent tasks (array)."""
+    try:
+        result = supabase.table("surveys").select("id,title,description,created_at,status,settings").eq("status", "active").limit(40).execute()
+        surveys = result.data or []
+
+        # Bulk-fetch question counts
+        try:
+            q_data = supabase.table("questions").select("survey_id").execute().data or []
+            q_counts: dict = {}
+            for q in q_data:
+                sid = q.get("survey_id", "")
+                q_counts[sid] = q_counts.get(sid, 0) + 1
+        except Exception:
+            q_counts = {}
+
+        # Bulk-fetch response counts
+        try:
+            r_data = supabase.table("responses").select("survey_id").execute().data or []
+            r_counts: dict = {}
+            for r in r_data:
+                sid = r.get("survey_id", "")
+                r_counts[sid] = r_counts.get(sid, 0) + 1
+        except Exception:
+            r_counts = {}
+
+        tasks = []
+        for s in surveys:
+            q_count = q_counts.get(s["id"], 0)
+            filled = r_counts.get(s["id"], 0)
+            est_mins = max(2, q_count * 1)
+            settings = s.get("settings") or {}
+            org = settings.get("org_name") or "SurveyAI"
+            access_mode = settings.get("access_mode", "public")
+            tasks.append({
+                "id": s["id"],
+                "survey_id": s["id"],
+                "cat": "Research",
+                "title": s["title"],
+                "reward": "5.00",
+                "time": f"{est_mins} min",
+                "diff": 1,
+                "eligible": access_mode == "public",
+                "eligReason": None if access_mode == "public" else "Access restricted",
+                "company": org,
+                "filled": filled,
+                "quota": 1000,
+                "desc": s.get("description") or f"Complete this survey about \"{s['title']}\".",
+            })
+        return tasks
+    except Exception:
+        return []
+
+
+# ── Expert profiles ─────────────────────────────────────────────────────────
+
+@app.get("/expert/profiles/{user_id}")
+def get_expert_profile(user_id: str):
+    """Return expert profile for a given user (built from onboarding_data)."""
+    from datetime import datetime
+    try:
+        result = supabase.table("profiles").select("id,role,onboarding_data,created_at").eq("id", user_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        row = result.data[0]
+        data = row.get("onboarding_data") or {}
+
+        created_at = row.get("created_at", "")
+        try:
+            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            member_since = dt.strftime("%b %Y")
+        except Exception:
+            member_since = "2024"
+
+        name = data.get("name", "Expert")
+        initials = "".join(w[0].upper() for w in name.split()[:2]) if name else "EX"
+        try:
+            hourly_rate = int(float(data.get("hourly_rate", 0) or 0))
+        except Exception:
+            hourly_rate = 0
+
+        return {
+            "id": user_id,
+            "name": name,
+            "title": data.get("title") or "Survey Research Expert",
+            "location": data.get("location") or "",
+            "avatar": "",
+            "initials": initials,
+            "bio": data.get("bio") or "",
+            "specializations": data.get("specializations") or [],
+            "languages": data.get("languages") or ["English"],
+            "hourly_rate": hourly_rate,
+            "years_experience": str(data.get("years_experience") or ""),
+            "availability": data.get("availability") or "part",
+            "rating": 0,
+            "total_reviews": 0,
+            "total_projects": 0,
+            "response_rate": 95,
+            "profile_score": 80,
+            "member_since": member_since,
+            "portfolio": data.get("portfolio") or [],
+            "certifications": data.get("certifications") or [],
+            "reviews": [],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Expert jobs ─────────────────────────────────────────────────────────────
+
+@app.get("/expert/jobs")
+def get_expert_jobs(user_id: str = ""):
+    """Return open expert job requests. Returns empty list if table doesn't exist yet."""
+    try:
+        result = supabase.table("expert_jobs").select("*").eq("status", "open").order("created_at", desc=True).limit(20).execute()
+        return {"jobs": result.data or []}
+    except Exception:
+        return {"jobs": []}

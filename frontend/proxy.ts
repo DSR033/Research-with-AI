@@ -22,14 +22,19 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-
   const { pathname } = request.nextUrl
+
+  // Skip auth in development — avoids login friction during local testing
+  if (process.env.NODE_ENV === 'development') return response
+
+  const { data: { user } } = await supabase.auth.getUser()
 
   const isPublic =
     pathname.includes('/respond') ||
     pathname.startsWith('/login') ||
-    pathname.startsWith('/auth/')
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/landing')
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()

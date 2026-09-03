@@ -6,7 +6,8 @@ import { createClient } from '../../lib/supabase-browser'
 
 const NAV = [
   { href: '/admin/billing', icon: '💳', label: 'Billing & Plan' },
-  { href: '/admin/team', icon: '👥', label: 'Team & Roles' },
+  { href: '/admin/team', icon: '👥', label: 'Team' },
+  { href: '/admin/roles', icon: '🔑', label: 'Roles & Permissions' },
   { href: '/admin/settings', icon: '⚙️', label: 'Org Settings' },
   { href: '/admin/usage', icon: '📊', label: 'Usage & Costs' },
   { href: '/admin/gdpr', icon: '🔒', label: 'Privacy & Data' },
@@ -21,6 +22,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [role, setRole] = useState<string | null>(null)
 
   useEffect(() => {
+    // Dev bypass — skip auth so any tester can access admin panel
+    if (process.env.NODE_ENV === 'development') {
+      setRole('owner')
+      setStatus('allowed')
+      return
+    }
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { router.replace('/login'); return }
